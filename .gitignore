@@ -1,0 +1,4 @@
+.env
+.active-color
+*.log
+.DS_Store
