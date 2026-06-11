@@ -1,0 +1,58 @@
+{
+  "tasks": [
+    {
+      "id": "deck-diff-flow",
+      "title": "Document decK diff before sync",
+      "target_file": "docs/daily/deck-diff-flow.md",
+      "content": "A production gateway workflow should run `deck gateway diff` before `deck gateway sync`. The diff gives operators a chance to review route, service, plugin, and upstream changes before applying them.\n\nRecommended flow:\n\n- render desired Kong state\n- run decK diff against the target gateway\n- review changes in CI logs or PR output\n- apply sync only after the target backend is healthy",
+      "portfolio_reason": "Shows gateway-as-code discipline and avoids blind configuration pushes.",
+      "test_instructions": "Review the markdown file and confirm diff happens before sync.",
+      "change_kind": "docs-only"
+    },
+    {
+      "id": "rate-limiting-plugin",
+      "title": "Add rate limiting plugin notes",
+      "target_file": "docs/daily/rate-limiting-plugin.md",
+      "content": "Rate limiting belongs at the gateway boundary for public or shared internal APIs. Kong can enforce request limits before traffic reaches backend services.\n\nPlugin planning inputs:\n\n- consumer or service-level scope\n- limit period and burst tolerance\n- storage policy\n- response behavior when limits are exceeded\n- dashboard and alerting signals",
+      "portfolio_reason": "Connects Kong gateway configuration with production traffic protection.",
+      "test_instructions": "Review the markdown file and confirm it describes planning inputs instead of hard-coded policy.",
+      "change_kind": "docs-only"
+    },
+    {
+      "id": "request-size-limit",
+      "title": "Add request size limit notes",
+      "target_file": "docs/daily/request-size-limit.md",
+      "content": "Request size limits reduce backend risk by rejecting oversized payloads at the gateway. This is useful for APIs that accept uploads, JSON bodies, or AI prompt payloads.\n\nOperational considerations:\n\n- define limits per route or service\n- align limits with upstream application constraints\n- log rejected requests for troubleshooting\n- document expected client behavior",
+      "portfolio_reason": "Shows practical API gateway hardening beyond simple routing.",
+      "test_instructions": "Review the markdown file and confirm it describes route/service scope.",
+      "change_kind": "docs-only"
+    },
+    {
+      "id": "admin-api-security",
+      "title": "Document Kong Admin API security",
+      "target_file": "docs/daily/admin-api-security.md",
+      "content": "The Kong Admin API should never be exposed as a public endpoint. Automation should reach it through trusted networks or CI runners with controlled access.\n\nBaseline controls:\n\n- bind Admin API to localhost or private network\n- restrict access by firewall or network policy\n- avoid sharing admin credentials in repository files\n- apply decK changes from trusted automation only",
+      "portfolio_reason": "Highlights a key production security boundary for Kong operations.",
+      "test_instructions": "Review the markdown file and confirm it does not suggest public Admin API exposure.",
+      "change_kind": "docs-only"
+    },
+    {
+      "id": "route-promotion-checklist",
+      "title": "Add route promotion checklist",
+      "target_file": "docs/daily/route-promotion-checklist.md",
+      "content": "Route promotion should happen only after the target backend is running and healthy.\n\nChecklist:\n\n- start inactive backend color\n- wait for container health\n- render decK state to target color\n- run decK diff\n- sync gateway state\n- verify traffic through Kong proxy\n- stop old color only after verification",
+      "portfolio_reason": "Makes the zero-downtime gateway story reviewable and repeatable.",
+      "test_instructions": "Review the markdown file and confirm it preserves the old backend until after verification.",
+      "change_kind": "docs-only"
+    },
+    {
+      "id": "gateway-observability",
+      "title": "Add gateway observability notes",
+      "target_file": "docs/daily/gateway-observability.md",
+      "content": "Gateway observability should show whether failures are caused by routing, upstream services, client behavior, or gateway policy.\n\nUseful signals:\n\n- request count by route and status code\n- upstream latency\n- gateway latency\n- rate-limit rejections\n- request size rejections\n- Admin API change history through CI logs",
+      "portfolio_reason": "Connects Kong operations with monitoring and incident diagnosis.",
+      "test_instructions": "Review the markdown file and confirm the signals support troubleshooting.",
+      "change_kind": "docs-only"
+    }
+  ]
+}
