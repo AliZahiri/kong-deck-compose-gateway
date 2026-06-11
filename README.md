@@ -53,6 +53,24 @@ Switch back to blue:
 ./scripts/switch-upstream.sh blue
 ```
 
+## Python Gateway CLI
+
+The upstream switching logic is implemented as a Python CLI and the Bash script is kept as a compatibility wrapper.
+
+```bash
+python3 -m kong_deck_gateway switch green
+python3 -m kong_deck_gateway switch blue
+```
+
+The CLI handles:
+
+- target color validation
+- inactive backend startup
+- container health check polling
+- decK state rendering
+- decK sync execution
+- optional old color shutdown
+
 ## Repository Structure
 
 ```text

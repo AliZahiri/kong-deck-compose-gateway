@@ -1,0 +1,11 @@
+[project]
+name = "kong-deck-compose-gateway"
+version = "0.1.0"
+description = "Python CLI for Kong decK blue/green upstream switching"
+requires-python = ">=3.10"
+
+[project.scripts]
+kong-deck-gateway = "kong_deck_gateway.cli:main"
+
+[tool.setuptools]
+packages = ["kong_deck_gateway"]
