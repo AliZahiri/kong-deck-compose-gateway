@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from kong_deck_gateway.cli import read_active_color, render_deck_state, validate_color
+from kong_deck_gateway.cli import deck_script, read_active_color, render_deck_state, validate_color
 
 
 class KongDeckGatewayTests(unittest.TestCase):
@@ -28,6 +28,15 @@ class KongDeckGatewayTests(unittest.TestCase):
             render_deck_state(template, output, "green")
 
             self.assertEqual(output.read_text(encoding="utf-8"), "url: http://sample-api-green:80")
+
+    def test_deck_script_resolves_supported_actions(self):
+        root = Path("/repo")
+        self.assertEqual(deck_script(root, "diff"), root / "scripts/deck-diff.sh")
+        self.assertEqual(deck_script(root, "sync"), root / "scripts/deck-sync.sh")
+
+    def test_deck_script_rejects_unknown_action(self):
+        with self.assertRaises(ValueError):
+            deck_script(Path("/repo"), "delete")
 
 
 if __name__ == "__main__":

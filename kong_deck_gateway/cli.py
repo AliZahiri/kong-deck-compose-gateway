@@ -34,6 +34,12 @@ def render_deck_state(template: Path, output: Path, active_color: str) -> None:
     output.write_text(rendered, encoding="utf-8")
 
 
+def deck_script(root: Path, action: str) -> Path:
+    if action not in {"diff", "sync"}:
+        raise ValueError("decK action must be diff or sync")
+    return root / f"scripts/deck-{action}.sh"
+
+
 def compose_command(compose_file: Path, env_file: Path, *args: str) -> list[str]:
     return ["docker", "compose", "-f", str(compose_file), "--env-file", str(env_file), *args]
 
@@ -102,8 +108,12 @@ def switch(args: argparse.Namespace) -> int:
 
     render_deck_state(root / "deck/kong.yaml.tpl", root / "deck/kong.yaml", target_color)
 
+    if not args.skip_diff:
+        print("Reviewing Kong state with decK diff")
+        run([str(deck_script(root, "diff"))])
+
     print("Applying Kong state with decK")
-    run([str(root / "scripts/deck-sync.sh")])
+    run([str(deck_script(root, "sync"))])
 
     active_file.write_text(f"{target_color}\n", encoding="utf-8")
     print(f"Kong route switched to {target_color}")
@@ -123,6 +133,11 @@ def build_parser() -> argparse.ArgumentParser:
     switch_parser.add_argument("--root", help="Repository root. Defaults to the current package root.")
     switch_parser.add_argument("--health-attempts", type=int, default=60)
     switch_parser.add_argument("--health-interval", type=float, default=2.0)
+    switch_parser.add_argument(
+        "--skip-diff",
+        action="store_true",
+        help="Skip decK diff and apply sync directly. Intended only for controlled automation.",
+    )
     switch_parser.set_defaults(func=switch)
 
     return parser
