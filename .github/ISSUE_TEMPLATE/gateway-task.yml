@@ -1,0 +1,29 @@
+name: Gateway task
+description: Track a concrete Kong, decK, routing, plugin, or observability improvement.
+title: "[gateway]: "
+labels: ["enhancement", "gateway"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should improve in the gateway flow?
+      placeholder: Add a reusable rate-limiting plugin example to the decK template.
+    validations:
+      required: true
+  - type: textarea
+    id: gateway_policy
+    attributes:
+      label: Gateway policy impact
+      description: Which route, service, plugin, or upstream behavior changes?
+      placeholder: The plugin should apply at service scope and remain environment configurable.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Which checks prove this is safe to apply?
+      placeholder: decK diff shows expected plugin changes before sync.
+    validations:
+      required: true
