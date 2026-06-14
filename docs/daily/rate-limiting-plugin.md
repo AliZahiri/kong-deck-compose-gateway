@@ -1,7 +1,8 @@
-# Rate Limiting Plugin Notes
+# Add rate limiting plugin notes
 
-Rate limiting belongs at the gateway boundary for public or shared internal
-APIs. Kong can enforce request limits before traffic reaches backend services.
+<!-- daily-pr-task: rate-limiting-plugin -->
+
+Rate limiting belongs at the gateway boundary for public or shared internal APIs. Kong can enforce request limits before traffic reaches backend services.
 
 Plugin planning inputs:
 
@@ -11,6 +12,10 @@ Plugin planning inputs:
 - response behavior when limits are exceeded
 - dashboard and alerting signals
 
-The useful production pattern is to define rate limits as gateway policy, keep
-the application focused on domain behavior, and observe rejections separately
-from upstream application errors.
+## Portfolio Value
+
+Connects Kong gateway configuration with production traffic protection.
+
+## Validation
+
+Review the markdown file and confirm it describes planning inputs instead of hard-coded policy.
