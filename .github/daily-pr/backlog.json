@@ -23,9 +23,24 @@
       "title": "Add request size limit notes",
       "target_file": "docs/daily/request-size-limit.md",
       "content": "Request size limits reduce backend risk by rejecting oversized payloads at the gateway. This is useful for APIs that accept uploads, JSON bodies, or AI prompt payloads.\n\nOperational considerations:\n\n- define limits per route or service\n- align limits with upstream application constraints\n- log rejected requests for troubleshooting\n- document expected client behavior",
+      "files": [
+        {
+          "path": "docs/daily/request-size-limit.md",
+          "kind": "document",
+          "content": "Request size limits reduce backend risk by rejecting oversized payloads at the gateway. This is useful for APIs that accept uploads, JSON bodies, or AI prompt payloads.\n\nOperational considerations:\n\n- define limits per route or service\n- align limits with upstream application constraints\n- log rejected requests for troubleshooting\n- document expected client behavior"
+        },
+        {
+          "path": "kong_deck_gateway/policy.py",
+          "content": "from __future__ import annotations\n\n\ndef request_size_limit_plugin(allowed_payload_size_mb: int, *, route_name: str | None = None) -> dict[str, object]:\n    if allowed_payload_size_mb <= 0:\n        raise ValueError(\"allowed payload size must be positive\")\n\n    plugin: dict[str, object] = {\n        \"name\": \"request-size-limiting\",\n        \"config\": {\"allowed_payload_size\": allowed_payload_size_mb},\n    }\n    if route_name:\n        plugin[\"route\"] = {\"name\": route_name}\n    return plugin\n"
+        },
+        {
+          "path": "tests/test_policy.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.policy import request_size_limit_plugin\n\n\nclass GatewayPolicyTests(unittest.TestCase):\n    def test_request_size_limit_plugin_uses_kong_plugin_name(self):\n        plugin = request_size_limit_plugin(10, route_name=\"uploads\")\n\n        self.assertEqual(plugin[\"name\"], \"request-size-limiting\")\n        self.assertEqual(plugin[\"config\"][\"allowed_payload_size\"], 10)\n        self.assertEqual(plugin[\"route\"][\"name\"], \"uploads\")\n\n    def test_request_size_limit_must_be_positive(self):\n        with self.assertRaises(ValueError):\n            request_size_limit_plugin(0)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ],
       "portfolio_reason": "Shows practical API gateway hardening beyond simple routing.",
       "test_instructions": "Review the markdown file and confirm it describes route/service scope.",
-      "change_kind": "docs-only"
+      "change_kind": "docs-and-code"
     },
     {
       "id": "admin-api-security",
