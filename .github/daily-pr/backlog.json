@@ -49,7 +49,22 @@
       "content": "The Kong Admin API should never be exposed as a public endpoint. Automation should reach it through trusted networks or CI runners with controlled access.\n\nBaseline controls:\n\n- bind Admin API to localhost or private network\n- restrict access by firewall or network policy\n- avoid sharing admin credentials in repository files\n- apply decK changes from trusted automation only",
       "portfolio_reason": "Highlights a key production security boundary for Kong operations.",
       "test_instructions": "Review the markdown file and confirm it does not suggest public Admin API exposure.",
-      "change_kind": "docs-only"
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/admin-api-security.md",
+          "kind": "document",
+          "content": "The Kong Admin API should never be exposed as a public endpoint. Automation should reach it through trusted networks or CI runners with controlled access.\n\nBaseline controls:\n\n- bind Admin API to localhost or private network\n- restrict access by firewall or network policy\n- avoid sharing admin credentials in repository files\n- apply decK changes from trusted automation only"
+        },
+        {
+          "path": "kong_deck_gateway/admin_security.py",
+          "content": "from __future__ import annotations\n\nPUBLIC_BIND_ADDRESSES = {\"0.0.0.0\", \"::\"}\n\n\ndef admin_api_is_private(bind_address: str, *, trusted_networks: list[str] | tuple[str, ...] = ()) -> bool:\n    if bind_address in PUBLIC_BIND_ADDRESSES and not trusted_networks:\n        return False\n    return bind_address in {\"127.0.0.1\", \"localhost\"} or bool(trusted_networks)\n\n\ndef admin_api_security_warnings(bind_address: str, *, trusted_networks: list[str] | tuple[str, ...] = ()) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if bind_address in PUBLIC_BIND_ADDRESSES:\n        warnings.append(\"admin_api_public_bind\")\n    if not trusted_networks and bind_address not in {\"127.0.0.1\", \"localhost\"}:\n        warnings.append(\"trusted_network_missing\")\n    return tuple(warnings)\n"
+        },
+        {
+          "path": "tests/test_admin_security.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.admin_security import admin_api_is_private, admin_api_security_warnings\n\n\nclass AdminSecurityTests(unittest.TestCase):\n    def test_localhost_admin_api_is_private(self):\n        self.assertTrue(admin_api_is_private(\"127.0.0.1\"))\n\n    def test_public_bind_without_trusted_network_warns(self):\n        warnings = admin_api_security_warnings(\"0.0.0.0\")\n\n        self.assertIn(\"admin_api_public_bind\", warnings)\n        self.assertIn(\"trusted_network_missing\", warnings)\n        self.assertFalse(admin_api_is_private(\"0.0.0.0\"))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     },
     {
       "id": "route-promotion-checklist",
@@ -58,7 +73,22 @@
       "content": "Route promotion should happen only after the target backend is running and healthy.\n\nChecklist:\n\n- start inactive backend color\n- wait for container health\n- render decK state to target color\n- run decK diff\n- sync gateway state\n- verify traffic through Kong proxy\n- stop old color only after verification",
       "portfolio_reason": "Makes the zero-downtime gateway story reviewable and repeatable.",
       "test_instructions": "Review the markdown file and confirm it preserves the old backend until after verification.",
-      "change_kind": "docs-only"
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/route-promotion-checklist.md",
+          "kind": "document",
+          "content": "Route promotion should happen only after the target backend is running and healthy.\n\nChecklist:\n\n- start inactive backend color\n- wait for container health\n- render decK state to target color\n- run decK diff\n- sync gateway state\n- verify traffic through Kong proxy\n- stop old color only after verification"
+        },
+        {
+          "path": "kong_deck_gateway/promotion.py",
+          "content": "from __future__ import annotations\n\nREQUIRED_PROMOTION_STEPS = (\n    \"start_inactive_backend\",\n    \"wait_for_health\",\n    \"render_deck_state\",\n    \"run_deck_diff\",\n    \"sync_gateway_state\",\n    \"verify_proxy_traffic\",\n    \"stop_old_backend_after_verification\",\n)\n\n\ndef missing_promotion_steps(steps: list[str] | tuple[str, ...] | set[str]) -> tuple[str, ...]:\n    present = set(steps)\n    return tuple(step for step in REQUIRED_PROMOTION_STEPS if step not in present)\n\n\ndef promotion_plan_is_complete(steps: list[str] | tuple[str, ...] | set[str]) -> bool:\n    return not missing_promotion_steps(steps)\n"
+        },
+        {
+          "path": "tests/test_promotion.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.promotion import REQUIRED_PROMOTION_STEPS, missing_promotion_steps, promotion_plan_is_complete\n\n\nclass PromotionTests(unittest.TestCase):\n    def test_complete_promotion_plan_passes(self):\n        self.assertTrue(promotion_plan_is_complete(REQUIRED_PROMOTION_STEPS))\n\n    def test_missing_promotion_steps_are_reported(self):\n        missing = missing_promotion_steps({\"start_inactive_backend\"})\n\n        self.assertIn(\"run_deck_diff\", missing)\n        self.assertIn(\"verify_proxy_traffic\", missing)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     },
     {
       "id": "gateway-observability",
@@ -67,7 +97,22 @@
       "content": "Gateway observability should show whether failures are caused by routing, upstream services, client behavior, or gateway policy.\n\nUseful signals:\n\n- request count by route and status code\n- upstream latency\n- gateway latency\n- rate-limit rejections\n- request size rejections\n- Admin API change history through CI logs",
       "portfolio_reason": "Connects Kong operations with monitoring and incident diagnosis.",
       "test_instructions": "Review the markdown file and confirm the signals support troubleshooting.",
-      "change_kind": "docs-only"
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/gateway-observability.md",
+          "kind": "document",
+          "content": "Gateway observability should show whether failures are caused by routing, upstream services, client behavior, or gateway policy.\n\nUseful signals:\n\n- request count by route and status code\n- upstream latency\n- gateway latency\n- rate-limit rejections\n- request size rejections\n- Admin API change history through CI logs"
+        },
+        {
+          "path": "kong_deck_gateway/observability.py",
+          "content": "from __future__ import annotations\n\nREQUIRED_GATEWAY_SIGNALS = (\n    \"request_count_by_route_status\",\n    \"upstream_latency\",\n    \"gateway_latency\",\n    \"rate_limit_rejections\",\n    \"request_size_rejections\",\n    \"admin_api_change_history\",\n)\n\n\ndef missing_gateway_signals(signals: list[str] | tuple[str, ...] | set[str]) -> tuple[str, ...]:\n    present = set(signals)\n    return tuple(signal for signal in REQUIRED_GATEWAY_SIGNALS if signal not in present)\n\n\ndef gateway_observability_is_complete(signals: list[str] | tuple[str, ...] | set[str]) -> bool:\n    return not missing_gateway_signals(signals)\n"
+        },
+        {
+          "path": "tests/test_observability.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.observability import REQUIRED_GATEWAY_SIGNALS, gateway_observability_is_complete, missing_gateway_signals\n\n\nclass GatewayObservabilityTests(unittest.TestCase):\n    def test_complete_signal_set_passes(self):\n        self.assertTrue(gateway_observability_is_complete(REQUIRED_GATEWAY_SIGNALS))\n\n    def test_missing_signals_are_reported(self):\n        missing = missing_gateway_signals({\"upstream_latency\"})\n\n        self.assertIn(\"request_count_by_route_status\", missing)\n        self.assertIn(\"admin_api_change_history\", missing)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
