@@ -113,6 +113,72 @@
           "content": "import unittest\n\nfrom kong_deck_gateway.observability import REQUIRED_GATEWAY_SIGNALS, gateway_observability_is_complete, missing_gateway_signals\n\n\nclass GatewayObservabilityTests(unittest.TestCase):\n    def test_complete_signal_set_passes(self):\n        self.assertTrue(gateway_observability_is_complete(REQUIRED_GATEWAY_SIGNALS))\n\n    def test_missing_signals_are_reported(self):\n        missing = missing_gateway_signals({\"upstream_latency\"})\n\n        self.assertIn(\"request_count_by_route_status\", missing)\n        self.assertIn(\"admin_api_change_history\", missing)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "plugin-scope-policy",
+      "title": "Add gateway plugin scope policy",
+      "portfolio_reason": "Shows production API gateway controls are attached deliberately to route, service, or consumer scope.",
+      "test_instructions": "Run the unit test and confirm unscoped plugins are rejected.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/plugin-scope-policy.md",
+          "kind": "document",
+          "content": "Gateway plugins should have an intentional scope. Unscoped plugins can change global gateway behavior and should require explicit review.\n\nAccepted scopes:\n\n- route\n- service\n- consumer\n- global only with explicit approval"
+        },
+        {
+          "path": "kong_deck_gateway/plugin_scope.py",
+          "content": "from __future__ import annotations\n\nSCOPED_PLUGIN_KEYS = (\"route\", \"service\", \"consumer\")\n\n\ndef plugin_scope_warnings(plugin: dict[str, object], *, allow_global: bool = False) -> tuple[str, ...]:\n    if any(plugin.get(key) for key in SCOPED_PLUGIN_KEYS):\n        return ()\n    return () if allow_global else (\"plugin_scope_missing\",)\n\n\ndef plugin_scope_is_safe(plugin: dict[str, object], *, allow_global: bool = False) -> bool:\n    return not plugin_scope_warnings(plugin, allow_global=allow_global)\n"
+        },
+        {
+          "path": "tests/test_plugin_scope.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.plugin_scope import plugin_scope_is_safe, plugin_scope_warnings\n\n\nclass PluginScopeTests(unittest.TestCase):\n    def test_route_scoped_plugin_is_safe(self):\n        self.assertTrue(plugin_scope_is_safe({\"name\": \"rate-limiting\", \"route\": {\"name\": \"api\"}}))\n\n    def test_unscoped_plugin_requires_global_approval(self):\n        warnings = plugin_scope_warnings({\"name\": \"rate-limiting\"})\n\n        self.assertIn(\"plugin_scope_missing\", warnings)\n        self.assertTrue(plugin_scope_is_safe({\"name\": \"correlation-id\"}, allow_global=True))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "upstream-health-policy",
+      "title": "Add upstream health policy",
+      "portfolio_reason": "Connects Kong route promotion with active upstream health checks.",
+      "test_instructions": "Run the unit test and confirm active and passive health checks are required.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/upstream-health-policy.md",
+          "kind": "document",
+          "content": "Kong upstreams should expose health policy before traffic promotion. Active checks catch broken backends before traffic moves, while passive checks help detect runtime failures.\n\nRequired policy:\n\n- active health check path\n- healthy threshold\n- unhealthy threshold\n- passive failure detection"
+        },
+        {
+          "path": "kong_deck_gateway/upstream_health.py",
+          "content": "from __future__ import annotations\n\n\ndef upstream_health_warnings(policy: dict[str, object]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if not policy.get(\"active_path\"):\n        warnings.append(\"active_path_missing\")\n    if not isinstance(policy.get(\"healthy_threshold\"), int) or policy.get(\"healthy_threshold\", 0) <= 0:\n        warnings.append(\"healthy_threshold_must_be_positive\")\n    if not isinstance(policy.get(\"unhealthy_threshold\"), int) or policy.get(\"unhealthy_threshold\", 0) <= 0:\n        warnings.append(\"unhealthy_threshold_must_be_positive\")\n    if policy.get(\"passive_checks_enabled\") is not True:\n        warnings.append(\"passive_checks_must_be_enabled\")\n    return tuple(warnings)\n\n\ndef upstream_health_policy_is_safe(policy: dict[str, object]) -> bool:\n    return not upstream_health_warnings(policy)\n"
+        },
+        {
+          "path": "tests/test_upstream_health.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.upstream_health import upstream_health_policy_is_safe, upstream_health_warnings\n\n\nclass UpstreamHealthTests(unittest.TestCase):\n    def test_safe_policy_passes(self):\n        policy = {\"active_path\": \"/health\", \"healthy_threshold\": 2, \"unhealthy_threshold\": 2, \"passive_checks_enabled\": True}\n\n        self.assertTrue(upstream_health_policy_is_safe(policy))\n\n    def test_missing_policy_values_are_reported(self):\n        warnings = upstream_health_warnings({})\n\n        self.assertIn(\"active_path_missing\", warnings)\n        self.assertIn(\"passive_checks_must_be_enabled\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "deck-change-summary",
+      "title": "Add decK change summary helper",
+      "portfolio_reason": "Makes gateway-as-code changes easier to review before sync.",
+      "test_instructions": "Run the unit test and confirm route, service, and plugin counts are summarized.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/deck-change-summary.md",
+          "kind": "document",
+          "content": "decK diff output should be summarized for reviewers so route, service, and plugin changes are visible before sync. A small summary helper can make CI output easier to scan.\n\nSummary fields:\n\n- routes changed\n- services changed\n- plugins changed\n- upstreams changed"
+        },
+        {
+          "path": "kong_deck_gateway/change_summary.py",
+          "content": "from __future__ import annotations\n\nCHANGE_TYPES = (\"routes\", \"services\", \"plugins\", \"upstreams\")\n\n\ndef summarize_changes(changes: list[dict[str, str]]) -> dict[str, int]:\n    summary = {change_type: 0 for change_type in CHANGE_TYPES}\n    for change in changes:\n        change_type = change.get(\"type\", \"\")\n        if change_type in summary:\n            summary[change_type] += 1\n    return summary\n"
+        },
+        {
+          "path": "tests/test_change_summary.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.change_summary import summarize_changes\n\n\nclass ChangeSummaryTests(unittest.TestCase):\n    def test_changes_are_grouped_by_type(self):\n        summary = summarize_changes([{\"type\": \"routes\"}, {\"type\": \"routes\"}, {\"type\": \"plugins\"}, {\"type\": \"ignored\"}])\n\n        self.assertEqual(summary[\"routes\"], 2)\n        self.assertEqual(summary[\"plugins\"], 1)\n        self.assertEqual(summary[\"services\"], 0)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
