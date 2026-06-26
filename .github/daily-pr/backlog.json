@@ -179,6 +179,50 @@
           "content": "import unittest\n\nfrom kong_deck_gateway.change_summary import summarize_changes\n\n\nclass ChangeSummaryTests(unittest.TestCase):\n    def test_changes_are_grouped_by_type(self):\n        summary = summarize_changes([{\"type\": \"routes\"}, {\"type\": \"routes\"}, {\"type\": \"plugins\"}, {\"type\": \"ignored\"}])\n\n        self.assertEqual(summary[\"routes\"], 2)\n        self.assertEqual(summary[\"plugins\"], 1)\n        self.assertEqual(summary[\"services\"], 0)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "route-host-policy",
+      "title": "Add route host policy",
+      "portfolio_reason": "Keeps gateway route exposure intentional by requiring host and path constraints.",
+      "test_instructions": "Run the unit test and confirm wildcard routes are rejected unless explicitly allowed.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/route-host-policy.md",
+          "kind": "document",
+          "content": "Gateway routes should define host and path constraints so services are not accidentally exposed through broad catch-all routes.\n\nPolicy checks:\n\n- route has a host\n- route has a path\n- wildcard host requires explicit approval\n- strip path behavior is documented"
+        },
+        {
+          "path": "kong_deck_gateway/route_policy.py",
+          "content": "from __future__ import annotations\n\n\ndef route_policy_warnings(route: dict[str, object], *, allow_wildcard: bool = False) -> tuple[str, ...]:\n    warnings: list[str] = []\n    hosts = route.get(\"hosts\")\n    paths = route.get(\"paths\")\n    if not isinstance(hosts, list) or not hosts:\n        warnings.append(\"route_hosts_missing\")\n    elif \"*\" in hosts and not allow_wildcard:\n        warnings.append(\"wildcard_host_requires_approval\")\n    if not isinstance(paths, list) or not paths:\n        warnings.append(\"route_paths_missing\")\n    if \"strip_path\" not in route:\n        warnings.append(\"strip_path_must_be_explicit\")\n    return tuple(warnings)\n\n\ndef route_policy_is_safe(route: dict[str, object], *, allow_wildcard: bool = False) -> bool:\n    return not route_policy_warnings(route, allow_wildcard=allow_wildcard)\n"
+        },
+        {
+          "path": "tests/test_route_policy.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.route_policy import route_policy_is_safe, route_policy_warnings\n\n\nclass RoutePolicyTests(unittest.TestCase):\n    def test_constrained_route_passes(self):\n        route = {\"hosts\": [\"api.example.com\"], \"paths\": [\"/v1\"], \"strip_path\": False}\n\n        self.assertTrue(route_policy_is_safe(route))\n\n    def test_wildcard_route_requires_approval(self):\n        warnings = route_policy_warnings({\"hosts\": [\"*\"], \"paths\": [\"/\"], \"strip_path\": True})\n\n        self.assertIn(\"wildcard_host_requires_approval\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "consumer-quota-policy",
+      "title": "Add consumer quota policy",
+      "portfolio_reason": "Shows gateway governance for shared APIs and tenant-aware traffic protection.",
+      "test_instructions": "Run the unit test and confirm quota limits must be positive.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/consumer-quota-policy.md",
+          "kind": "document",
+          "content": "Consumer quota policy should define per-consumer request budgets before plugins are applied. This keeps shared API limits predictable and auditable.\n\nPolicy fields:\n\n- consumer name\n- requests per minute\n- burst allowance\n- alert threshold"
+        },
+        {
+          "path": "kong_deck_gateway/consumer_quota.py",
+          "content": "from __future__ import annotations\n\n\ndef consumer_quota_warnings(policy: dict[str, object]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if not policy.get(\"consumer\"):\n        warnings.append(\"consumer_missing\")\n    rpm = policy.get(\"rpm\")\n    burst = policy.get(\"burst\")\n    if not isinstance(rpm, int) or rpm <= 0:\n        warnings.append(\"rpm_must_be_positive\")\n    if not isinstance(burst, int) or burst < 0:\n        warnings.append(\"burst_must_be_non_negative\")\n    return tuple(warnings)\n\n\ndef consumer_quota_is_safe(policy: dict[str, object]) -> bool:\n    return not consumer_quota_warnings(policy)\n"
+        },
+        {
+          "path": "tests/test_consumer_quota.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.consumer_quota import consumer_quota_is_safe, consumer_quota_warnings\n\n\nclass ConsumerQuotaTests(unittest.TestCase):\n    def test_valid_quota_passes(self):\n        self.assertTrue(consumer_quota_is_safe({\"consumer\": \"mobile\", \"rpm\": 120, \"burst\": 20}))\n\n    def test_invalid_quota_is_reported(self):\n        warnings = consumer_quota_warnings({\"rpm\": 0, \"burst\": -1})\n\n        self.assertIn(\"consumer_missing\", warnings)\n        self.assertIn(\"rpm_must_be_positive\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
