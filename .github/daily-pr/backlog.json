@@ -223,6 +223,50 @@
           "content": "import unittest\n\nfrom kong_deck_gateway.consumer_quota import consumer_quota_is_safe, consumer_quota_warnings\n\n\nclass ConsumerQuotaTests(unittest.TestCase):\n    def test_valid_quota_passes(self):\n        self.assertTrue(consumer_quota_is_safe({\"consumer\": \"mobile\", \"rpm\": 120, \"burst\": 20}))\n\n    def test_invalid_quota_is_reported(self):\n        warnings = consumer_quota_warnings({\"rpm\": 0, \"burst\": -1})\n\n        self.assertIn(\"consumer_missing\", warnings)\n        self.assertIn(\"rpm_must_be_positive\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "jwt-plugin-policy",
+      "title": "Add JWT plugin policy",
+      "portfolio_reason": "Shows gateway authentication plugins are configured with explicit claims and algorithms.",
+      "test_instructions": "Run the unit test and confirm weak JWT policies are rejected.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/jwt-plugin-policy.md",
+          "kind": "document",
+          "content": "JWT plugin policy should define expected claims and allowed algorithms before a route is exposed. This keeps auth behavior reviewable in gateway-as-code.\n\nPolicy checks:\n\n- required claims\n- allowed algorithms\n- anonymous access setting\n- clock skew tolerance"
+        },
+        {
+          "path": "kong_deck_gateway/jwt_policy.py",
+          "content": "from __future__ import annotations\n\nWEAK_ALGORITHMS = {\"none\", \"HS256\"}\n\n\ndef jwt_policy_warnings(policy: dict[str, object]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    claims = policy.get(\"required_claims\")\n    algorithms = set(policy.get(\"algorithms\", [])) if isinstance(policy.get(\"algorithms\"), list) else set()\n    if not isinstance(claims, list) or not claims:\n        warnings.append(\"required_claims_missing\")\n    if not algorithms:\n        warnings.append(\"algorithms_missing\")\n    if algorithms & WEAK_ALGORITHMS:\n        warnings.append(\"weak_jwt_algorithm_configured\")\n    if policy.get(\"anonymous_access\") is True:\n        warnings.append(\"anonymous_access_must_be_explicitly_reviewed\")\n    return tuple(warnings)\n\n\ndef jwt_policy_is_safe(policy: dict[str, object]) -> bool:\n    return not jwt_policy_warnings(policy)\n"
+        },
+        {
+          "path": "tests/test_jwt_policy.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.jwt_policy import jwt_policy_is_safe, jwt_policy_warnings\n\n\nclass JwtPolicyTests(unittest.TestCase):\n    def test_safe_jwt_policy_passes(self):\n        self.assertTrue(jwt_policy_is_safe({\"required_claims\": [\"sub\", \"aud\"], \"algorithms\": [\"RS256\"], \"anonymous_access\": False}))\n\n    def test_weak_algorithm_is_reported(self):\n        warnings = jwt_policy_warnings({\"required_claims\": [\"sub\"], \"algorithms\": [\"HS256\"]})\n\n        self.assertIn(\"weak_jwt_algorithm_configured\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "gateway-timeout-policy",
+      "title": "Add gateway timeout policy",
+      "portfolio_reason": "Shows route protection includes bounded upstream timeouts.",
+      "test_instructions": "Run the unit test and confirm missing or excessive timeouts are reported.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/gateway-timeout-policy.md",
+          "kind": "document",
+          "content": "Gateway timeout policy protects callers and upstreams from unbounded waits. Route and service definitions should keep connect, read, and write timeouts explicit.\n\nPolicy fields:\n\n- connect timeout\n- read timeout\n- write timeout\n- maximum allowed timeout"
+        },
+        {
+          "path": "kong_deck_gateway/timeout_policy.py",
+          "content": "from __future__ import annotations\n\nTIMEOUT_FIELDS = (\"connect_timeout\", \"read_timeout\", \"write_timeout\")\n\n\ndef timeout_policy_warnings(policy: dict[str, object], *, max_timeout_ms: int = 60000) -> tuple[str, ...]:\n    warnings: list[str] = []\n    for field in TIMEOUT_FIELDS:\n        value = policy.get(field)\n        if not isinstance(value, int) or value <= 0:\n            warnings.append(f\"{field}_must_be_positive\")\n        elif value > max_timeout_ms:\n            warnings.append(f\"{field}_exceeds_maximum\")\n    return tuple(warnings)\n\n\ndef timeout_policy_is_safe(policy: dict[str, object], *, max_timeout_ms: int = 60000) -> bool:\n    return not timeout_policy_warnings(policy, max_timeout_ms=max_timeout_ms)\n"
+        },
+        {
+          "path": "tests/test_timeout_policy.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.timeout_policy import timeout_policy_is_safe, timeout_policy_warnings\n\n\nclass TimeoutPolicyTests(unittest.TestCase):\n    def test_safe_timeouts_pass(self):\n        self.assertTrue(timeout_policy_is_safe({\"connect_timeout\": 5000, \"read_timeout\": 30000, \"write_timeout\": 30000}))\n\n    def test_excessive_timeout_is_reported(self):\n        warnings = timeout_policy_warnings({\"connect_timeout\": 0, \"read_timeout\": 120000, \"write_timeout\": 1000})\n\n        self.assertIn(\"connect_timeout_must_be_positive\", warnings)\n        self.assertIn(\"read_timeout_exceeds_maximum\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
