@@ -5,12 +5,17 @@ TIMEOUT_FIELDS = ("connect_timeout", "read_timeout", "write_timeout")
 
 def timeout_policy_warnings(policy: dict[str, object], *, max_timeout_ms: int = 60000) -> tuple[str, ...]:
     warnings: list[str] = []
+    values: dict[str, int] = {}
     for field in TIMEOUT_FIELDS:
         value = policy.get(field)
         if not isinstance(value, int) or value <= 0:
             warnings.append(f"{field}_must_be_positive")
         elif value > max_timeout_ms:
             warnings.append(f"{field}_exceeds_maximum")
+        else:
+            values[field] = value
+    if values.get("connect_timeout", 0) > values.get("read_timeout", max_timeout_ms):
+        warnings.append("connect_timeout_must_not_exceed_read_timeout")
     return tuple(warnings)
 
 

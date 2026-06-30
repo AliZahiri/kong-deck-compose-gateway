@@ -267,6 +267,50 @@
           "content": "import unittest\n\nfrom kong_deck_gateway.timeout_policy import timeout_policy_is_safe, timeout_policy_warnings\n\n\nclass TimeoutPolicyTests(unittest.TestCase):\n    def test_safe_timeouts_pass(self):\n        self.assertTrue(timeout_policy_is_safe({\"connect_timeout\": 5000, \"read_timeout\": 30000, \"write_timeout\": 30000}))\n\n    def test_excessive_timeout_is_reported(self):\n        warnings = timeout_policy_warnings({\"connect_timeout\": 0, \"read_timeout\": 120000, \"write_timeout\": 1000})\n\n        self.assertIn(\"connect_timeout_must_be_positive\", warnings)\n        self.assertIn(\"read_timeout_exceeds_maximum\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "ip-allowlist-policy",
+      "title": "Add IP allowlist policy",
+      "portfolio_reason": "Shows sensitive gateway routes can be protected by explicit source network controls.",
+      "test_instructions": "Run the unit test and confirm public allowlists are rejected unless approved.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/ip-allowlist-policy.md",
+          "kind": "document",
+          "content": "IP allowlist policy should keep sensitive routes reachable only from trusted networks. Public ranges should require explicit review before sync.\n\nPolicy checks:\n\n- at least one CIDR\n- no public catch-all without approval\n- owner is declared"
+        },
+        {
+          "path": "kong_deck_gateway/ip_allowlist.py",
+          "content": "from __future__ import annotations\n\nPUBLIC_CATCH_ALL = {\"0.0.0.0/0\", \"::/0\"}\n\n\ndef ip_allowlist_warnings(policy: dict[str, object], *, allow_public: bool = False) -> tuple[str, ...]:\n    warnings: list[str] = []\n    cidrs = policy.get(\"cidrs\")\n    if not isinstance(cidrs, list) or not cidrs:\n        warnings.append(\"cidrs_missing\")\n        cidrs = []\n    if set(cidrs) & PUBLIC_CATCH_ALL and not allow_public:\n        warnings.append(\"public_catch_all_requires_approval\")\n    if not policy.get(\"owner\"):\n        warnings.append(\"owner_missing\")\n    return tuple(warnings)\n\n\ndef ip_allowlist_is_safe(policy: dict[str, object], *, allow_public: bool = False) -> bool:\n    return not ip_allowlist_warnings(policy, allow_public=allow_public)\n"
+        },
+        {
+          "path": "tests/test_ip_allowlist.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.ip_allowlist import ip_allowlist_is_safe, ip_allowlist_warnings\n\n\nclass IpAllowlistTests(unittest.TestCase):\n    def test_private_allowlist_passes(self):\n        self.assertTrue(ip_allowlist_is_safe({\"cidrs\": [\"10.0.0.0/24\"], \"owner\": \"platform\"}))\n\n    def test_public_catch_all_requires_approval(self):\n        warnings = ip_allowlist_warnings({\"cidrs\": [\"0.0.0.0/0\"]})\n\n        self.assertIn(\"public_catch_all_requires_approval\", warnings)\n        self.assertIn(\"owner_missing\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "gateway-error-budget-policy",
+      "title": "Add gateway error budget policy",
+      "portfolio_reason": "Connects gateway observability with explicit reliability thresholds.",
+      "test_instructions": "Run the unit test and confirm error budget thresholds are bounded.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/gateway-error-budget-policy.md",
+          "kind": "document",
+          "content": "Gateway error budget policy should define acceptable 5xx and upstream failure rates per route. This turns observability signals into an operational threshold.\n\nPolicy fields:\n\n- route name\n- max 5xx rate\n- max upstream failure rate\n- alert owner"
+        },
+        {
+          "path": "kong_deck_gateway/error_budget.py",
+          "content": "from __future__ import annotations\n\n\ndef error_budget_warnings(policy: dict[str, object]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if not policy.get(\"route\"):\n        warnings.append(\"route_missing\")\n    for field in (\"max_5xx_rate_pct\", \"max_upstream_failure_pct\"):\n        value = policy.get(field)\n        if not isinstance(value, (int, float)) or not 0 <= value <= 100:\n            warnings.append(f\"{field}_must_be_between_0_and_100\")\n    if not policy.get(\"owner\"):\n        warnings.append(\"owner_missing\")\n    return tuple(warnings)\n\n\ndef error_budget_is_valid(policy: dict[str, object]) -> bool:\n    return not error_budget_warnings(policy)\n"
+        },
+        {
+          "path": "tests/test_error_budget.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.error_budget import error_budget_is_valid, error_budget_warnings\n\n\nclass ErrorBudgetTests(unittest.TestCase):\n    def test_valid_budget_passes(self):\n        self.assertTrue(error_budget_is_valid({\"route\": \"api\", \"max_5xx_rate_pct\": 1, \"max_upstream_failure_pct\": 2, \"owner\": \"sre\"}))\n\n    def test_invalid_budget_is_reported(self):\n        warnings = error_budget_warnings({\"max_5xx_rate_pct\": 200})\n\n        self.assertIn(\"route_missing\", warnings)\n        self.assertIn(\"max_5xx_rate_pct_must_be_between_0_and_100\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }

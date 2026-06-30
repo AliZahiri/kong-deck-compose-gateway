@@ -13,6 +13,11 @@ class TimeoutPolicyTests(unittest.TestCase):
         self.assertIn("connect_timeout_must_be_positive", warnings)
         self.assertIn("read_timeout_exceeds_maximum", warnings)
 
+    def test_connect_timeout_cannot_exceed_read_timeout(self):
+        warnings = timeout_policy_warnings({"connect_timeout": 10000, "read_timeout": 5000, "write_timeout": 5000})
+
+        self.assertIn("connect_timeout_must_not_exceed_read_timeout", warnings)
+
 
 if __name__ == "__main__":
     unittest.main()
