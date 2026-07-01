@@ -311,6 +311,50 @@
           "content": "import unittest\n\nfrom kong_deck_gateway.error_budget import error_budget_is_valid, error_budget_warnings\n\n\nclass ErrorBudgetTests(unittest.TestCase):\n    def test_valid_budget_passes(self):\n        self.assertTrue(error_budget_is_valid({\"route\": \"api\", \"max_5xx_rate_pct\": 1, \"max_upstream_failure_pct\": 2, \"owner\": \"sre\"}))\n\n    def test_invalid_budget_is_reported(self):\n        warnings = error_budget_warnings({\"max_5xx_rate_pct\": 200})\n\n        self.assertIn(\"route_missing\", warnings)\n        self.assertIn(\"max_5xx_rate_pct_must_be_between_0_and_100\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "deck-diff-safety-policy",
+      "title": "Add decK diff safety policy",
+      "portfolio_reason": "Shows gateway changes are reviewed for destructive drift before sync.",
+      "test_instructions": "Run the unit test and confirm destructive diff actions require approval.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/deck-diff-safety-policy.md",
+          "kind": "document",
+          "content": "decK diff safety policy should classify gateway changes before sync. Deletes and plugin removals should require explicit approval during production promotion.\n\nPolicy checks:\n\n- diff contains only known action types\n- destructive actions are approved\n- reviewer is declared\n- target environment is declared"
+        },
+        {
+          "path": "kong_deck_gateway/deck_diff_safety.py",
+          "content": "from __future__ import annotations\n\nDESTRUCTIVE_ACTIONS = {\"delete\", \"remove_plugin\", \"remove_route\"}\nKNOWN_ACTIONS = {\"create\", \"update\", \"delete\", \"remove_plugin\", \"remove_route\"}\n\n\ndef deck_diff_warnings(actions: list[str], *, destructive_approved: bool = False, reviewer: str | None = None, environment: str | None = None) -> tuple[str, ...]:\n    warnings: list[str] = []\n    unknown = [action for action in actions if action not in KNOWN_ACTIONS]\n    if unknown:\n        warnings.append(\"unknown_diff_action\")\n    if any(action in DESTRUCTIVE_ACTIONS for action in actions) and not destructive_approved:\n        warnings.append(\"destructive_change_requires_approval\")\n    if not reviewer:\n        warnings.append(\"reviewer_missing\")\n    if not environment:\n        warnings.append(\"environment_missing\")\n    return tuple(warnings)\n\n\ndef deck_diff_is_safe(actions: list[str], *, destructive_approved: bool = False, reviewer: str | None = None, environment: str | None = None) -> bool:\n    return not deck_diff_warnings(actions, destructive_approved=destructive_approved, reviewer=reviewer, environment=environment)\n"
+        },
+        {
+          "path": "tests/test_deck_diff_safety.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.deck_diff_safety import deck_diff_is_safe, deck_diff_warnings\n\n\nclass DeckDiffSafetyTests(unittest.TestCase):\n    def test_non_destructive_diff_passes(self):\n        self.assertTrue(deck_diff_is_safe([\"create\", \"update\"], reviewer=\"platform\", environment=\"staging\"))\n\n    def test_destructive_diff_requires_approval(self):\n        warnings = deck_diff_warnings([\"delete\"], reviewer=\"platform\", environment=\"prod\")\n\n        self.assertIn(\"destructive_change_requires_approval\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "rate-limit-tier-policy",
+      "title": "Add rate limit tier policy",
+      "portfolio_reason": "Shows gateway controls can enforce plan-based API usage limits.",
+      "test_instructions": "Run the unit test and confirm free/basic/pro tiers have ordered limits.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/rate-limit-tier-policy.md",
+          "kind": "document",
+          "content": "Rate limit tier policy should keep public API limits explicit per customer plan. Limits should increase by tier and never leave free traffic unlimited.\n\nPolicy fields:\n\n- free tier rpm\n- basic tier rpm\n- pro tier rpm\n- burst multiplier"
+        },
+        {
+          "path": "kong_deck_gateway/rate_limit_tier.py",
+          "content": "from __future__ import annotations\n\n\ndef rate_limit_tier_warnings(limits: dict[str, int]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    for tier in (\"free\", \"basic\", \"pro\"):\n        if not isinstance(limits.get(tier), int) or limits[tier] <= 0:\n            warnings.append(f\"{tier}_limit_must_be_positive\")\n    if warnings:\n        return tuple(warnings)\n    if not limits[\"free\"] <= limits[\"basic\"] <= limits[\"pro\"]:\n        warnings.append(\"tier_limits_must_be_ordered\")\n    return tuple(warnings)\n\n\ndef rate_limit_tiers_are_safe(limits: dict[str, int]) -> bool:\n    return not rate_limit_tier_warnings(limits)\n"
+        },
+        {
+          "path": "tests/test_rate_limit_tier.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.rate_limit_tier import rate_limit_tier_warnings, rate_limit_tiers_are_safe\n\n\nclass RateLimitTierTests(unittest.TestCase):\n    def test_ordered_limits_pass(self):\n        self.assertTrue(rate_limit_tiers_are_safe({\"free\": 10, \"basic\": 60, \"pro\": 300}))\n\n    def test_unordered_limits_are_reported(self):\n        self.assertIn(\"tier_limits_must_be_ordered\", rate_limit_tier_warnings({\"free\": 100, \"basic\": 50, \"pro\": 300}))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
