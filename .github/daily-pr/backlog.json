@@ -355,6 +355,50 @@
           "content": "import unittest\n\nfrom kong_deck_gateway.rate_limit_tier import rate_limit_tier_warnings, rate_limit_tiers_are_safe\n\n\nclass RateLimitTierTests(unittest.TestCase):\n    def test_ordered_limits_pass(self):\n        self.assertTrue(rate_limit_tiers_are_safe({\"free\": 10, \"basic\": 60, \"pro\": 300}))\n\n    def test_unordered_limits_are_reported(self):\n        self.assertIn(\"tier_limits_must_be_ordered\", rate_limit_tier_warnings({\"free\": 100, \"basic\": 50, \"pro\": 300}))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "plugin-order-policy",
+      "title": "Add gateway plugin order policy",
+      "portfolio_reason": "Shows Kong plugin chains are validated so auth and rate limits run before transformations.",
+      "test_instructions": "Run the unit test and confirm auth precedes request transformation plugins.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/plugin-order-policy.md",
+          "kind": "document",
+          "content": "Gateway plugin order policy should ensure security plugins run before request transformation or upstream routing behavior changes.\n\nPolicy checks:\n\n- authentication plugin is present\n- rate limiting runs after authentication\n- request transformer runs after authentication\n- plugin list is not empty"
+        },
+        {
+          "path": "kong_deck_gateway/plugin_order.py",
+          "content": "from __future__ import annotations\n\nAUTH_PLUGINS = {\"jwt\", \"key-auth\", \"openid-connect\"}\n\n\ndef plugin_order_warnings(plugins: list[str]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if not plugins:\n        return (\"plugins_missing\",)\n    auth_positions = [index for index, plugin in enumerate(plugins) if plugin in AUTH_PLUGINS]\n    if not auth_positions:\n        warnings.append(\"auth_plugin_missing\")\n        return tuple(warnings)\n    auth_index = min(auth_positions)\n    for plugin in (\"rate-limiting\", \"request-transformer\"):\n        if plugin in plugins and plugins.index(plugin) < auth_index:\n            warnings.append(f\"{plugin}_runs_before_auth\")\n    return tuple(warnings)\n\n\ndef plugin_order_is_safe(plugins: list[str]) -> bool:\n    return not plugin_order_warnings(plugins)\n"
+        },
+        {
+          "path": "tests/test_plugin_order.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.plugin_order import plugin_order_is_safe, plugin_order_warnings\n\n\nclass PluginOrderTests(unittest.TestCase):\n    def test_auth_first_chain_passes(self):\n        self.assertTrue(plugin_order_is_safe([\"jwt\", \"rate-limiting\", \"request-transformer\"]))\n\n    def test_transformer_before_auth_is_reported(self):\n        warnings = plugin_order_warnings([\"request-transformer\", \"jwt\"])\n\n        self.assertIn(\"request-transformer_runs_before_auth\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
+    },
+    {
+      "id": "service-owner-tag-policy",
+      "title": "Add service owner tag policy",
+      "portfolio_reason": "Shows gateway-as-code keeps ownership metadata for routes and services.",
+      "test_instructions": "Run the unit test and confirm service owner, environment, and runbook tags are required.",
+      "change_kind": "docs-and-code",
+      "files": [
+        {
+          "path": "docs/daily/service-owner-tag-policy.md",
+          "kind": "document",
+          "content": "Service owner tag policy should keep Kong entities traceable to an owner and runbook. This helps incident response when route behavior changes.\n\nRequired tags:\n\n- owner\n- environment\n- runbook\n- criticality"
+        },
+        {
+          "path": "kong_deck_gateway/service_tags.py",
+          "content": "from __future__ import annotations\n\nREQUIRED_TAG_PREFIXES = (\"owner:\", \"env:\", \"runbook:\", \"criticality:\")\n\n\ndef missing_service_tag_prefixes(tags: list[str]) -> tuple[str, ...]:\n    return tuple(prefix for prefix in REQUIRED_TAG_PREFIXES if not any(tag.startswith(prefix) for tag in tags))\n\n\ndef service_tags_are_complete(tags: list[str]) -> bool:\n    return not missing_service_tag_prefixes(tags)\n"
+        },
+        {
+          "path": "tests/test_service_tags.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.service_tags import missing_service_tag_prefixes, service_tags_are_complete\n\n\nclass ServiceTagsTests(unittest.TestCase):\n    def test_complete_tags_pass(self):\n        tags = [\"owner:platform\", \"env:prod\", \"runbook:https://example.invalid/runbook\", \"criticality:high\"]\n\n        self.assertTrue(service_tags_are_complete(tags))\n\n    def test_missing_runbook_is_reported(self):\n        self.assertIn(\"runbook:\", missing_service_tag_prefixes([\"owner:platform\", \"env:prod\", \"criticality:high\"]))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ]
     }
   ]
 }
