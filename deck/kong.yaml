@@ -3,6 +3,13 @@ _format_version: "3.0"
 services:
   - name: sample-api
     url: http://sample-api-blue:80
+    plugins:
+      - name: rate-limiting
+        enabled: true
+        config:
+          minute: 60
+          policy: local
+          fault_tolerant: true
     routes:
       - name: sample-api-route
         paths:

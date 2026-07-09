@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 VALID_COLORS = {"blue", "green"}
+VALID_RATE_LIMIT_POLICIES = {"local", "cluster", "redis"}
 
 
 def repo_root() -> Path:
@@ -29,8 +30,31 @@ def validate_color(color: str) -> str:
     return color
 
 
+def deck_template_values(active_color: str, env: dict[str, str] | None = None) -> dict[str, str]:
+    source = os.environ if env is None else env
+    minute = source.get("KONG_RATE_LIMIT_MINUTE", "60")
+    policy = source.get("KONG_RATE_LIMIT_POLICY", "local")
+    fault_tolerant = source.get("KONG_RATE_LIMIT_FAULT_TOLERANT", "true").lower()
+
+    if not minute.isdigit() or int(minute) <= 0:
+        raise ValueError("KONG_RATE_LIMIT_MINUTE must be a positive integer")
+    if policy not in VALID_RATE_LIMIT_POLICIES:
+        raise ValueError("KONG_RATE_LIMIT_POLICY must be local, cluster, or redis")
+    if fault_tolerant not in {"true", "false"}:
+        raise ValueError("KONG_RATE_LIMIT_FAULT_TOLERANT must be true or false")
+
+    return {
+        "ACTIVE_COLOR": active_color,
+        "RATE_LIMIT_MINUTE": minute,
+        "RATE_LIMIT_POLICY": policy,
+        "RATE_LIMIT_FAULT_TOLERANT": fault_tolerant,
+    }
+
+
 def render_deck_state(template: Path, output: Path, active_color: str) -> None:
-    rendered = template.read_text(encoding="utf-8").replace("{{ACTIVE_COLOR}}", active_color)
+    rendered = template.read_text(encoding="utf-8")
+    for key, value in deck_template_values(active_color).items():
+        rendered = rendered.replace(f"{{{{{key}}}}}", value)
     output.write_text(rendered, encoding="utf-8")
 
 

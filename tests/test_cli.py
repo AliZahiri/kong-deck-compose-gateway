@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from kong_deck_gateway.cli import (
+    deck_template_values,
     deck_script,
     read_active_color,
     render_deck_state,
@@ -31,11 +32,41 @@ class KongDeckGatewayTests(unittest.TestCase):
             tmp = Path(tmpdir)
             template = tmp / "kong.yaml.tpl"
             output = tmp / "kong.yaml"
-            template.write_text("url: http://sample-api-{{ACTIVE_COLOR}}:80", encoding="utf-8")
+            template.write_text(
+                (
+                    "url: http://sample-api-{{ACTIVE_COLOR}}:80\n"
+                    "minute: {{RATE_LIMIT_MINUTE}}\n"
+                    "policy: {{RATE_LIMIT_POLICY}}\n"
+                    "fault_tolerant: {{RATE_LIMIT_FAULT_TOLERANT}}\n"
+                ),
+                encoding="utf-8",
+            )
 
             render_deck_state(template, output, "green")
 
-            self.assertEqual(output.read_text(encoding="utf-8"), "url: http://sample-api-green:80")
+            rendered = output.read_text(encoding="utf-8")
+            self.assertIn("url: http://sample-api-green:80", rendered)
+            self.assertIn("minute: 60", rendered)
+            self.assertIn("policy: local", rendered)
+            self.assertIn("fault_tolerant: true", rendered)
+
+    def test_deck_template_values_validate_rate_limit_environment(self):
+        values = deck_template_values(
+            "green",
+            {
+                "KONG_RATE_LIMIT_MINUTE": "120",
+                "KONG_RATE_LIMIT_POLICY": "redis",
+                "KONG_RATE_LIMIT_FAULT_TOLERANT": "false",
+            },
+        )
+
+        self.assertEqual(values["RATE_LIMIT_MINUTE"], "120")
+        self.assertEqual(values["RATE_LIMIT_POLICY"], "redis")
+        self.assertEqual(values["RATE_LIMIT_FAULT_TOLERANT"], "false")
+
+    def test_deck_template_values_reject_invalid_rate_limit_minute(self):
+        with self.assertRaises(ValueError):
+            deck_template_values("green", {"KONG_RATE_LIMIT_MINUTE": "0"})
 
     def test_deck_script_resolves_supported_actions(self):
         root = Path("/repo")

@@ -10,6 +10,9 @@ class RateLimitTierTests(unittest.TestCase):
     def test_unordered_limits_are_reported(self):
         self.assertIn("tier_limits_must_be_ordered", rate_limit_tier_warnings({"free": 100, "basic": 50, "pro": 300}))
 
+    def test_non_positive_limits_are_reported(self):
+        self.assertIn("free_limit_must_be_positive", rate_limit_tier_warnings({"free": 0, "basic": 50, "pro": 300}))
+
 
 if __name__ == "__main__":
     unittest.main()

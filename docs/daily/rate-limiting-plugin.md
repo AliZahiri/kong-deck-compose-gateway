@@ -12,6 +12,12 @@ Plugin planning inputs:
 - response behavior when limits are exceeded
 - dashboard and alerting signals
 
+The decK template includes a service-level `rate-limiting` plugin. Operators can preview changes with `deck diff` after setting:
+
+- `KONG_RATE_LIMIT_MINUTE`
+- `KONG_RATE_LIMIT_POLICY`
+- `KONG_RATE_LIMIT_FAULT_TOLERANT`
+
 ## Portfolio Value
 
 Connects Kong gateway configuration with production traffic protection.
