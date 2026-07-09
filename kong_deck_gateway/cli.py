@@ -112,6 +112,10 @@ def switch(args: argparse.Namespace) -> int:
         print("Reviewing Kong state with decK diff")
         run([str(deck_script(root, "diff"))])
 
+    if args.dry_run:
+        print("Dry run complete; Kong state was rendered and decK sync was not applied")
+        return 0
+
     print("Applying Kong state with decK")
     run([str(deck_script(root, "sync"))])
 
@@ -137,6 +141,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip-diff",
         action="store_true",
         help="Skip decK diff and apply sync directly. Intended only for controlled automation.",
+    )
+    switch_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Render target Kong state and optional diff without applying decK sync.",
     )
     switch_parser.set_defaults(func=switch)
 
