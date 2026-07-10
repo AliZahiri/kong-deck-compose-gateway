@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -8,6 +9,7 @@ from kong_deck_gateway.cli import (
     deck_template_values,
     deck_script,
     read_active_color,
+    promotion_plan,
     render_deck_state,
     switch,
     validate_color,
@@ -77,6 +79,22 @@ class KongDeckGatewayTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             deck_script(Path("/repo"), "delete")
 
+    def test_promotion_plan_reports_sync_and_stop_decisions(self):
+        plan = promotion_plan(
+            current_color="blue",
+            target_color="green",
+            service="sample-api-green",
+            deck_state=Path("/repo/deck/kong.yaml"),
+            run_diff=True,
+            stop_old=True,
+        )
+
+        self.assertEqual(plan["target_color"], "green")
+        self.assertEqual(plan["previous_color"], "blue")
+        self.assertTrue(plan["will_run_diff"])
+        self.assertFalse(plan["will_apply_sync"])
+        self.assertTrue(plan["will_stop_previous_color"])
+
     def test_switch_dry_run_renders_diff_and_skips_sync(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -95,6 +113,7 @@ class KongDeckGatewayTests(unittest.TestCase):
                 health_interval=0.1,
                 skip_diff=False,
                 dry_run=True,
+                plan_json=False,
             )
 
             with (
@@ -109,6 +128,40 @@ class KongDeckGatewayTests(unittest.TestCase):
             self.assertNotIn([str(root / "scripts/deck-sync.sh")], commands)
             self.assertEqual(active_file.read_text(encoding="utf-8"), "blue\n")
             self.assertIn("sample-api-green", (root / "deck/kong.yaml").read_text(encoding="utf-8"))
+
+    def test_switch_dry_run_can_print_json_plan(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "deck").mkdir()
+            (root / "scripts").mkdir()
+            (root / "deck/kong.yaml.tpl").write_text(
+                "url: http://sample-api-{{ACTIVE_COLOR}}:80",
+                encoding="utf-8",
+            )
+            (root / ".active-color").write_text("blue\n", encoding="utf-8")
+            args = SimpleNamespace(
+                root=str(root),
+                color="green",
+                health_attempts=2,
+                health_interval=0.1,
+                skip_diff=True,
+                dry_run=True,
+                plan_json=True,
+            )
+
+            with (
+                mock.patch("kong_deck_gateway.cli.run") as run_mock,
+                mock.patch("kong_deck_gateway.cli.get_container_id", return_value="container-id"),
+                mock.patch("kong_deck_gateway.cli.wait_for_ready"),
+            ):
+                with mock.patch("sys.stdout", new_callable=__import__("io").StringIO) as stdout:
+                    self.assertEqual(switch(args), 0)
+
+            commands = [call.args[0] for call in run_mock.call_args_list]
+            self.assertNotIn([str(root / "scripts/deck-sync.sh")], commands)
+            output = stdout.getvalue()
+            plan = json.loads(output[output.index("{") :])
+            self.assertEqual(plan["target_color"], "green")
 
 
 if __name__ == "__main__":

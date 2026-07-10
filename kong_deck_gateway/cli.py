@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -68,6 +69,28 @@ def compose_command(compose_file: Path, env_file: Path, *args: str) -> list[str]
     return ["docker", "compose", "-f", str(compose_file), "--env-file", str(env_file), *args]
 
 
+def promotion_plan(
+    *,
+    current_color: str,
+    target_color: str,
+    service: str,
+    deck_state: Path,
+    run_diff: bool,
+    stop_old: bool,
+) -> dict[str, str | bool | None]:
+    previous_color = None if current_color == target_color else current_color
+    return {
+        "current_color": current_color,
+        "target_color": target_color,
+        "previous_color": previous_color,
+        "service": service,
+        "deck_state": str(deck_state),
+        "will_run_diff": run_diff,
+        "will_apply_sync": False,
+        "will_stop_previous_color": bool(previous_color and stop_old),
+    }
+
+
 def run(command: list[str], *, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
@@ -122,6 +145,7 @@ def switch(args: argparse.Namespace) -> int:
     target_color = validate_color(args.color)
     current_color = read_active_color(active_file)
     service = f"sample-api-{target_color}"
+    deck_state = root / "deck/kong.yaml"
 
     print(f"Starting {service}")
     run(compose_command(compose_file, env_file, "--profile", target_color, "up", "-d", service))
@@ -130,13 +154,24 @@ def switch(args: argparse.Namespace) -> int:
     print(f"Waiting for {service} health check")
     wait_for_ready(container_id, service, args.health_attempts, args.health_interval)
 
-    render_deck_state(root / "deck/kong.yaml.tpl", root / "deck/kong.yaml", target_color)
+    render_deck_state(root / "deck/kong.yaml.tpl", deck_state, target_color)
+    plan = promotion_plan(
+        current_color=current_color,
+        target_color=target_color,
+        service=service,
+        deck_state=deck_state,
+        run_diff=not args.skip_diff,
+        stop_old=stop_old,
+    )
 
     if not args.skip_diff:
         print("Reviewing Kong state with decK diff")
         run([str(deck_script(root, "diff"))])
 
     if args.dry_run:
+        if args.plan_json:
+            print(json.dumps(plan, indent=2, sort_keys=True))
+            return 0
         print("Dry run complete; Kong state was rendered and decK sync was not applied")
         return 0
 
@@ -171,6 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Render target Kong state and optional diff without applying decK sync.",
     )
+    switch_parser.add_argument("--plan-json", action="store_true", help="Print dry-run promotion plan as JSON.")
     switch_parser.set_defaults(func=switch)
 
     return parser
