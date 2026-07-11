@@ -399,6 +399,50 @@
           "content": "import unittest\n\nfrom kong_deck_gateway.service_tags import missing_service_tag_prefixes, service_tags_are_complete\n\n\nclass ServiceTagsTests(unittest.TestCase):\n    def test_complete_tags_pass(self):\n        tags = [\"owner:platform\", \"env:prod\", \"runbook:https://example.invalid/runbook\", \"criticality:high\"]\n\n        self.assertTrue(service_tags_are_complete(tags))\n\n    def test_missing_runbook_is_reported(self):\n        self.assertIn(\"runbook:\", missing_service_tag_prefixes([\"owner:platform\", \"env:prod\", \"criticality:high\"]))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
+    },
+    {
+      "id": "plugin-drift-risk",
+      "title": "Add plugin drift risk checks",
+      "files": [
+        {
+          "path": "docs/daily/plugin-drift-risk.md",
+          "kind": "document",
+          "content": "Gateway plugin drift happens when live Kong configuration no longer matches the reviewed declarative state. Drift can weaken authentication, rate limiting, request size limits, or ownership tags without a code review trail.\n\nRisk signals:\n\n- plugin exists live but not in desired state\n- desired plugin is missing live\n- plugin configuration differs on protected routes\n- drift affects auth, quota, or request limiting plugins"
+        },
+        {
+          "path": "kong_deck_gateway/plugin_drift.py",
+          "content": "from __future__ import annotations\n\nPROTECTED_PLUGINS = {\"jwt\", \"rate-limiting\", \"request-size-limiting\", \"ip-restriction\"}\n\n\ndef plugin_drift_warnings(desired: set[str], live: set[str]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    missing_live = sorted(desired - live)\n    unmanaged_live = sorted(live - desired)\n    for plugin in missing_live:\n        warnings.append(f\"missing_live_plugin:{plugin}\")\n    for plugin in unmanaged_live:\n        warnings.append(f\"unmanaged_live_plugin:{plugin}\")\n    for plugin in sorted((desired ^ live) & PROTECTED_PLUGINS):\n        warnings.append(f\"protected_plugin_drift:{plugin}\")\n    return tuple(warnings)\n\n\ndef plugin_state_matches(desired: set[str], live: set[str]) -> bool:\n    return not plugin_drift_warnings(desired, live)\n"
+        },
+        {
+          "path": "tests/test_plugin_drift.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.plugin_drift import plugin_drift_warnings, plugin_state_matches\n\n\nclass PluginDriftTests(unittest.TestCase):\n    def test_matching_plugin_sets_pass(self):\n        self.assertTrue(plugin_state_matches({\"jwt\", \"rate-limiting\"}, {\"jwt\", \"rate-limiting\"}))\n\n    def test_protected_plugin_drift_is_reported(self):\n        warnings = plugin_drift_warnings({\"jwt\", \"rate-limiting\"}, {\"jwt\"})\n\n        self.assertIn(\"missing_live_plugin:rate-limiting\", warnings)\n        self.assertIn(\"protected_plugin_drift:rate-limiting\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ],
+      "portfolio_reason": "Shows gateway-as-code validation beyond applying decK sync blindly.",
+      "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm protected plugin drift is reported.",
+      "change_kind": "docs-and-code"
+    },
+    {
+      "id": "route-owner-enforcement",
+      "title": "Add route owner enforcement helper",
+      "files": [
+        {
+          "path": "docs/daily/route-owner-enforcement.md",
+          "kind": "document",
+          "content": "Every production gateway route should have a clear service owner before promotion. Ownership metadata helps incident response, review routing changes, and connect API behavior to the responsible team.\n\nMinimum owner metadata:\n\n- owner name or team\n- escalation channel\n- service tier\n- route name"
+        },
+        {
+          "path": "kong_deck_gateway/route_owner.py",
+          "content": "from __future__ import annotations\n\nREQUIRED_OWNER_FIELDS = (\"route\", \"owner\", \"escalation\", \"tier\")\nVALID_TIERS = {\"critical\", \"standard\", \"internal\"}\n\n\ndef route_owner_warnings(metadata: dict[str, object]) -> tuple[str, ...]:\n    warnings: list[str] = []\n    for field in REQUIRED_OWNER_FIELDS:\n        if not str(metadata.get(field, \"\")).strip():\n            warnings.append(f\"{field}_is_required\")\n    tier = str(metadata.get(\"tier\", \"\")).strip()\n    if tier and tier not in VALID_TIERS:\n        warnings.append(\"tier_is_unknown\")\n    return tuple(warnings)\n\n\ndef route_owner_is_valid(metadata: dict[str, object]) -> bool:\n    return not route_owner_warnings(metadata)\n"
+        },
+        {
+          "path": "tests/test_route_owner.py",
+          "content": "import unittest\n\nfrom kong_deck_gateway.route_owner import route_owner_is_valid, route_owner_warnings\n\n\nclass RouteOwnerTests(unittest.TestCase):\n    def test_complete_owner_metadata_is_valid(self):\n        metadata = {\"route\": \"api-v1\", \"owner\": \"platform\", \"escalation\": \"on-call\", \"tier\": \"critical\"}\n\n        self.assertTrue(route_owner_is_valid(metadata))\n\n    def test_missing_owner_fields_are_reported(self):\n        warnings = route_owner_warnings({\"route\": \"api-v1\", \"tier\": \"unknown\"})\n\n        self.assertIn(\"owner_is_required\", warnings)\n        self.assertIn(\"escalation_is_required\", warnings)\n        self.assertIn(\"tier_is_unknown\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ],
+      "portfolio_reason": "Connects route promotion to operational ownership and incident readiness.",
+      "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm missing owner metadata blocks validation.",
+      "change_kind": "docs-and-code"
     }
   ]
 }
