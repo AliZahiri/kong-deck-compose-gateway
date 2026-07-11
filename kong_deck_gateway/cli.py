@@ -52,10 +52,15 @@ def deck_template_values(active_color: str, env: dict[str, str] | None = None) -
     }
 
 
-def render_deck_state(template: Path, output: Path, active_color: str) -> None:
+def render_deck_state_text(template: Path, active_color: str) -> str:
     rendered = template.read_text(encoding="utf-8")
     for key, value in deck_template_values(active_color).items():
         rendered = rendered.replace(f"{{{{{key}}}}}", value)
+    return rendered
+
+
+def render_deck_state(template: Path, output: Path, active_color: str) -> None:
+    rendered = render_deck_state_text(template, active_color)
     output.write_text(rendered, encoding="utf-8")
 
 
@@ -146,15 +151,7 @@ def switch(args: argparse.Namespace) -> int:
     current_color = read_active_color(active_file)
     service = f"sample-api-{target_color}"
     deck_state = root / "deck/kong.yaml"
-
-    print(f"Starting {service}")
-    run(compose_command(compose_file, env_file, "--profile", target_color, "up", "-d", service))
-
-    container_id = get_container_id(compose_file, env_file, service)
-    print(f"Waiting for {service} health check")
-    wait_for_ready(container_id, service, args.health_attempts, args.health_interval)
-
-    render_deck_state(root / "deck/kong.yaml.tpl", deck_state, target_color)
+    render_deck_state_text(root / "deck/kong.yaml.tpl", target_color)
     plan = promotion_plan(
         current_color=current_color,
         target_color=target_color,
@@ -164,16 +161,27 @@ def switch(args: argparse.Namespace) -> int:
         stop_old=stop_old,
     )
 
-    if not args.skip_diff:
-        print("Reviewing Kong state with decK diff")
-        run([str(deck_script(root, "diff"))])
-
     if args.dry_run:
         if args.plan_json:
             print(json.dumps(plan, indent=2, sort_keys=True))
             return 0
-        print("Dry run complete; Kong state was rendered and decK sync was not applied")
+        print(f"Dry run target color: {target_color}")
+        print(f"Dry run deck state: {deck_state}")
+        print("No containers, decK commands, active-color updates, or deck files were changed")
         return 0
+
+    print(f"Starting {service}")
+    run(compose_command(compose_file, env_file, "--profile", target_color, "up", "-d", service))
+
+    container_id = get_container_id(compose_file, env_file, service)
+    print(f"Waiting for {service} health check")
+    wait_for_ready(container_id, service, args.health_attempts, args.health_interval)
+
+    render_deck_state(root / "deck/kong.yaml.tpl", deck_state, target_color)
+
+    if not args.skip_diff:
+        print("Reviewing Kong state with decK diff")
+        run([str(deck_script(root, "diff"))])
 
     print("Applying Kong state with decK")
     run([str(deck_script(root, "sync"))])
@@ -204,7 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
     switch_parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Render target Kong state and optional diff without applying decK sync.",
+        help="Validate inputs and print the promotion plan without changing containers or deck files.",
     )
     switch_parser.add_argument("--plan-json", action="store_true", help="Print dry-run promotion plan as JSON.")
     switch_parser.set_defaults(func=switch)
