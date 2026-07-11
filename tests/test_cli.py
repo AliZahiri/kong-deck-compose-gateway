@@ -1,6 +1,8 @@
 import tempfile
 import unittest
 import json
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -95,7 +97,7 @@ class KongDeckGatewayTests(unittest.TestCase):
         self.assertFalse(plan["will_apply_sync"])
         self.assertTrue(plan["will_stop_previous_color"])
 
-    def test_switch_dry_run_renders_diff_and_skips_sync(self):
+    def test_switch_dry_run_has_no_external_side_effects(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             (root / "deck").mkdir()
@@ -118,16 +120,18 @@ class KongDeckGatewayTests(unittest.TestCase):
 
             with (
                 mock.patch("kong_deck_gateway.cli.run") as run_mock,
-                mock.patch("kong_deck_gateway.cli.get_container_id", return_value="container-id"),
-                mock.patch("kong_deck_gateway.cli.wait_for_ready"),
+                mock.patch("kong_deck_gateway.cli.get_container_id") as get_container_id,
+                mock.patch("kong_deck_gateway.cli.wait_for_ready") as wait_for_ready,
+                redirect_stdout(StringIO()) as stdout,
             ):
                 self.assertEqual(switch(args), 0)
 
-            commands = [call.args[0] for call in run_mock.call_args_list]
-            self.assertIn([str(root / "scripts/deck-diff.sh")], commands)
-            self.assertNotIn([str(root / "scripts/deck-sync.sh")], commands)
+            self.assertFalse(run_mock.called)
+            self.assertFalse(get_container_id.called)
+            self.assertFalse(wait_for_ready.called)
             self.assertEqual(active_file.read_text(encoding="utf-8"), "blue\n")
-            self.assertIn("sample-api-green", (root / "deck/kong.yaml").read_text(encoding="utf-8"))
+            self.assertFalse((root / "deck/kong.yaml").exists())
+            self.assertIn("No containers, decK commands", stdout.getvalue())
 
     def test_switch_dry_run_can_print_json_plan(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -151,16 +155,18 @@ class KongDeckGatewayTests(unittest.TestCase):
 
             with (
                 mock.patch("kong_deck_gateway.cli.run") as run_mock,
-                mock.patch("kong_deck_gateway.cli.get_container_id", return_value="container-id"),
-                mock.patch("kong_deck_gateway.cli.wait_for_ready"),
+                mock.patch("kong_deck_gateway.cli.get_container_id") as get_container_id,
+                mock.patch("kong_deck_gateway.cli.wait_for_ready") as wait_for_ready,
             ):
-                with mock.patch("sys.stdout", new_callable=__import__("io").StringIO) as stdout:
+                with redirect_stdout(StringIO()) as stdout:
                     self.assertEqual(switch(args), 0)
 
-            commands = [call.args[0] for call in run_mock.call_args_list]
-            self.assertNotIn([str(root / "scripts/deck-sync.sh")], commands)
+            self.assertFalse(run_mock.called)
+            self.assertFalse(get_container_id.called)
+            self.assertFalse(wait_for_ready.called)
+            self.assertFalse((root / "deck/kong.yaml").exists())
             output = stdout.getvalue()
-            plan = json.loads(output[output.index("{") :])
+            plan = json.loads(output)
             self.assertEqual(plan["target_color"], "green")
 
 
