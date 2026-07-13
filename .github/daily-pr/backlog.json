@@ -465,6 +465,28 @@
     "portfolio_reason": "Connects decK gateway configuration to measurable blue-green traffic safety rather than only declarative sync.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm target weights must be complete and deterministic.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "gateway-request-id-policy",
+    "title": "Add gateway request identifier policy",
+    "files": [
+      {
+        "path": "docs/daily/gateway-request-id-policy.md",
+        "kind": "document",
+        "content": "Gateway traffic should carry a bounded request identifier for traceability across Kong, upstream services, and incident logs. The policy validates the header name and avoids accepting arbitrary oversized values."
+      },
+      {
+        "path": "kong_deck_gateway/request_id_policy.py",
+        "content": "from __future__ import annotations\n\n\ndef request_id_warnings(header_name: str, value: str, *, max_length: int = 128) -> tuple[str, ...]:\n    warnings: list[str] = []\n    if header_name.lower() != \"x-request-id\":\n        warnings.append(\"request_id_header_must_be_x_request_id\")\n    if not value.strip():\n        warnings.append(\"request_id_value_is_required\")\n    elif len(value) > max_length:\n        warnings.append(\"request_id_value_exceeds_max_length\")\n    return tuple(warnings)\n\n\ndef request_id_is_safe(header_name: str, value: str, *, max_length: int = 128) -> bool:\n    return not request_id_warnings(header_name, value, max_length=max_length)\n"
+      },
+      {
+        "path": "tests/test_request_id_policy.py",
+        "content": "import unittest\n\nfrom kong_deck_gateway.request_id_policy import request_id_is_safe, request_id_warnings\n\n\nclass RequestIdPolicyTests(unittest.TestCase):\n    def test_standard_request_id_passes(self):\n        self.assertTrue(request_id_is_safe(\"X-Request-ID\", \"req-123\"))\n\n    def test_oversized_request_id_is_reported(self):\n        warnings = request_id_warnings(\"X-Request-ID\", \"x\" * 129)\n\n        self.assertIn(\"request_id_value_exceeds_max_length\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Adds a practical observability contract around request tracing at the API gateway boundary.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm oversized request identifiers are rejected.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
