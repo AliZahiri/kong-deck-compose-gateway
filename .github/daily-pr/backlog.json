@@ -442,7 +442,29 @@
       ],
       "portfolio_reason": "Connects route promotion to operational ownership and incident readiness.",
       "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm missing owner metadata blocks validation.",
-      "change_kind": "docs-and-code"
-    }
-  ]
+    "change_kind": "docs-and-code"
+  },
+  {
+    "id": "upstream-target-weight-policy",
+    "title": "Add upstream target weight policy",
+    "files": [
+      {
+        "path": "docs/daily/upstream-target-weight-policy.md",
+        "kind": "document",
+        "content": "Kong upstream targets need predictable traffic weights during blue-green promotion. The policy validates that every target is named, weights are positive, and the intended distribution adds up to the configured total.\n\nValidation signals:\n\n- target host is present\n- weights are positive integers\n- no duplicate targets\n- total traffic weight is exactly 100"
+      },
+      {
+        "path": "kong_deck_gateway/upstream_weights.py",
+        "content": "from __future__ import annotations\n\n\ndef upstream_weight_warnings(targets: list[dict[str, object]]) -> tuple[str, ...]:\n    if not targets:\n        return (\"upstream_targets_are_required\",)\n    warnings: list[str] = []\n    names = [str(target.get(\"target\", \"\")).strip() for target in targets]\n    if any(not name for name in names):\n        warnings.append(\"target_name_is_required\")\n    if len(set(names)) != len(names):\n        warnings.append(\"target_names_must_be_unique\")\n    weights = [target.get(\"weight\") for target in targets]\n    if any(not isinstance(weight, int) or weight <= 0 for weight in weights):\n        warnings.append(\"target_weights_must_be_positive_integers\")\n    elif sum(weights) != 100:\n        warnings.append(\"target_weights_must_total_100\")\n    return tuple(warnings)\n\n\ndef upstream_weights_are_safe(targets: list[dict[str, object]]) -> bool:\n    return not upstream_weight_warnings(targets)\n"
+      },
+      {
+        "path": "tests/test_upstream_weights.py",
+        "content": "import unittest\n\nfrom kong_deck_gateway.upstream_weights import upstream_weight_warnings, upstream_weights_are_safe\n\n\nclass UpstreamWeightTests(unittest.TestCase):\n    def test_balanced_targets_pass(self):\n        self.assertTrue(upstream_weights_are_safe([{\"target\": \"blue:80\", \"weight\": 50}, {\"target\": \"green:80\", \"weight\": 50}]))\n\n    def test_incomplete_distribution_is_reported(self):\n        warnings = upstream_weight_warnings([{\"target\": \"blue:80\", \"weight\": 70}, {\"target\": \"green:80\", \"weight\": 20}])\n\n        self.assertIn(\"target_weights_must_total_100\", warnings)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Connects decK gateway configuration to measurable blue-green traffic safety rather than only declarative sync.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm target weights must be complete and deterministic.",
+    "change_kind": "docs-and-code"
+  }
+]
 }
