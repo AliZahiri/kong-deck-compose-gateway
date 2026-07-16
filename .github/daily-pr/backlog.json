@@ -509,6 +509,28 @@
     "portfolio_reason": "Shows a concrete API gateway contract that reduces accidental endpoint exposure.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm unsupported HTTP methods fail validation.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "upstream-timeout-contract",
+    "title": "Add upstream timeout contract",
+    "files": [
+      {
+        "path": "docs/daily/upstream-timeout-contract.md",
+        "kind": "document",
+        "content": "Gateway timeouts should be explicit and bounded so an unhealthy upstream cannot consume all client connections. This policy validates the connect, read, and write timeout contract before a route is promoted."
+      },
+      {
+        "path": "kong_deck_gateway/upstream_timeouts.py",
+        "content": "from __future__ import annotations\n\nREQUIRED_TIMEOUTS = (\"connect_ms\", \"read_ms\", \"write_ms\")\n\n\ndef upstream_timeout_warnings(timeouts: dict[str, object], *, maximum_ms: int = 120000) -> tuple[str, ...]:\n    warnings: list[str] = []\n    for name in REQUIRED_TIMEOUTS:\n        value = timeouts.get(name)\n        if not isinstance(value, int) or not 0 < value <= maximum_ms:\n            warnings.append(f\"{name}_is_out_of_range\")\n    return tuple(warnings)\n\n\ndef upstream_timeouts_are_safe(timeouts: dict[str, object], *, maximum_ms: int = 120000) -> bool:\n    return not upstream_timeout_warnings(timeouts, maximum_ms=maximum_ms)\n"
+      },
+      {
+        "path": "tests/test_upstream_timeouts.py",
+        "content": "import unittest\n\nfrom kong_deck_gateway.upstream_timeouts import upstream_timeout_warnings, upstream_timeouts_are_safe\n\n\nclass UpstreamTimeoutTests(unittest.TestCase):\n    def test_bounded_timeouts_pass(self):\n        self.assertTrue(upstream_timeouts_are_safe({\"connect_ms\": 1000, \"read_ms\": 30000, \"write_ms\": 30000}))\n\n    def test_missing_timeout_is_reported(self):\n        self.assertIn(\"write_ms_is_out_of_range\", upstream_timeout_warnings({\"connect_ms\": 1000, \"read_ms\": 30000}))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Adds an operationally meaningful gateway safety check around upstream latency and connection exhaustion.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm incomplete timeout contracts fail validation.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
