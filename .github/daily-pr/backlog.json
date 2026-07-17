@@ -531,6 +531,28 @@
     "portfolio_reason": "Adds an operationally meaningful gateway safety check around upstream latency and connection exhaustion.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm incomplete timeout contracts fail validation.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "passive-upstream-health-policy",
+    "title": "Add passive upstream health policy",
+    "files": [
+      {
+        "path": "docs/daily/passive-upstream-health-policy.md",
+        "kind": "document",
+        "content": "Passive upstream health checks should use bounded failure and recovery thresholds so Kong can eject an unhealthy target without making recovery impossible. The policy validates explicit TCP and HTTP failure thresholds plus the number of successful responses required for recovery."
+      },
+      {
+        "path": "kong_deck_gateway/passive_health.py",
+        "content": "from __future__ import annotations\n\nREQUIRED_THRESHOLDS = (\"http_failures\", \"tcp_failures\", \"successes\")\n\n\ndef passive_health_violations(config: dict[str, object], *, maximum_threshold: int = 20) -> tuple[str, ...]:\n    violations: list[str] = []\n    for name in REQUIRED_THRESHOLDS:\n        value = config.get(name)\n        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= maximum_threshold:\n            violations.append(f\"{name}_must_be_between_1_and_{maximum_threshold}\")\n    return tuple(violations)\n\n\ndef passive_health_is_safe(config: dict[str, object], *, maximum_threshold: int = 20) -> bool:\n    return not passive_health_violations(config, maximum_threshold=maximum_threshold)\n"
+      },
+      {
+        "path": "tests/test_passive_health.py",
+        "content": "import unittest\n\nfrom kong_deck_gateway.passive_health import passive_health_is_safe, passive_health_violations\n\n\nclass PassiveHealthTests(unittest.TestCase):\n    def test_bounded_thresholds_pass(self):\n        self.assertTrue(passive_health_is_safe({\"http_failures\": 5, \"tcp_failures\": 3, \"successes\": 2}))\n\n    def test_missing_recovery_threshold_is_reported(self):\n        violations = passive_health_violations({\"http_failures\": 5, \"tcp_failures\": 3})\n        self.assertIn(\"successes_must_be_between_1_and_20\", violations)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Adds a testable gateway resilience contract for automatic target ejection and recovery.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm missing or unbounded passive health thresholds fail validation.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
