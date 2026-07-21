@@ -553,6 +553,50 @@
     "portfolio_reason": "Adds a testable gateway resilience contract for automatic target ejection and recovery.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm missing or unbounded passive health thresholds fail validation.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "route-collision-policy",
+    "title": "Add route collision detection policy",
+    "files": [
+      {
+        "path": "docs/daily/route-collision-policy.md",
+        "kind": "document",
+        "content": "Two gateway routes that claim the same host, path, and overlapping HTTP methods can make traffic ownership depend on router precedence. This policy detects exact routing-space collisions before decK sync, treating a route without explicit methods as matching every method. The result can be surfaced in promotion review without contacting the Admin API."
+      },
+      {
+        "path": "kong_deck_gateway/route_collisions.py",
+        "content": "from __future__ import annotations\n\n\ndef _methods(route: dict[str, object]) -> set[str] | None:\n    methods = route.get(\"methods\")\n    if not isinstance(methods, list) or not methods:\n        return None\n    return {str(method).strip().upper() for method in methods if str(method).strip()}\n\n\ndef route_collisions(routes: list[dict[str, object]]) -> tuple[str, ...]:\n    collisions: list[str] = []\n    for index, left in enumerate(routes):\n        left_name = str(left.get(\"name\", \"\")).strip() or f\"route-{index}\"\n        left_hosts = {str(host).strip().lower() for host in left.get(\"hosts\", []) if str(host).strip()} if isinstance(left.get(\"hosts\"), list) else set()\n        left_paths = {str(path).strip() for path in left.get(\"paths\", []) if str(path).strip()} if isinstance(left.get(\"paths\"), list) else set()\n        left_methods = _methods(left)\n        for right_index, right in enumerate(routes[index + 1 :], start=index + 1):\n            right_name = str(right.get(\"name\", \"\")).strip() or f\"route-{right_index}\"\n            right_hosts = {str(host).strip().lower() for host in right.get(\"hosts\", []) if str(host).strip()} if isinstance(right.get(\"hosts\"), list) else set()\n            right_paths = {str(path).strip() for path in right.get(\"paths\", []) if str(path).strip()} if isinstance(right.get(\"paths\"), list) else set()\n            right_methods = _methods(right)\n            methods_overlap = left_methods is None or right_methods is None or bool(left_methods & right_methods)\n            if left_hosts & right_hosts and left_paths & right_paths and methods_overlap:\n                collisions.append(f\"{left_name}:{right_name}\")\n    return tuple(collisions)\n\n\ndef routes_are_unambiguous(routes: list[dict[str, object]]) -> bool:\n    return not route_collisions(routes)\n"
+      },
+      {
+        "path": "tests/test_route_collisions.py",
+        "content": "import unittest\n\nfrom kong_deck_gateway.route_collisions import route_collisions, routes_are_unambiguous\n\n\nclass RouteCollisionTests(unittest.TestCase):\n    def test_distinct_methods_do_not_collide(self):\n        routes = [{\"name\": \"read\", \"hosts\": [\"api.example.com\"], \"paths\": [\"/orders\"], \"methods\": [\"GET\"]}, {\"name\": \"write\", \"hosts\": [\"api.example.com\"], \"paths\": [\"/orders\"], \"methods\": [\"POST\"]}]\n        self.assertTrue(routes_are_unambiguous(routes))\n\n    def test_overlapping_method_is_reported(self):\n        routes = [{\"name\": \"orders-a\", \"hosts\": [\"API.EXAMPLE.COM\"], \"paths\": [\"/orders\"], \"methods\": [\"GET\"]}, {\"name\": \"orders-b\", \"hosts\": [\"api.example.com\"], \"paths\": [\"/orders\"], \"methods\": [\"GET\", \"POST\"]}]\n        self.assertEqual((\"orders-a:orders-b\",), route_collisions(routes))\n\n    def test_route_without_methods_overlaps_all_methods(self):\n        routes = [{\"name\": \"catch-all\", \"hosts\": [\"api.example.com\"], \"paths\": [\"/orders\"]}, {\"name\": \"read\", \"hosts\": [\"api.example.com\"], \"paths\": [\"/orders\"], \"methods\": [\"GET\"]}]\n        self.assertEqual((\"catch-all:read\",), route_collisions(routes))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Adds a deterministic gateway promotion guard against ambiguous route ownership and precedence-sensitive traffic behavior.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm overlapping host/path/method space is reported while disjoint methods remain valid.",
+    "change_kind": "docs-and-code"
+  },
+  {
+    "id": "upstream-tls-verification-policy",
+    "title": "Add upstream TLS verification policy",
+    "files": [
+      {
+        "path": "docs/daily/upstream-tls-verification-policy.md",
+        "kind": "document",
+        "content": "Gateway-to-upstream encryption is incomplete when certificate verification, trusted CA references, or a bounded verification depth are omitted. This policy validates the declarative service TLS contract before decK sync and keeps private certificates outside the repository by checking only certificate identifiers."
+      },
+      {
+        "path": "kong_deck_gateway/upstream_tls.py",
+        "content": "from __future__ import annotations\n\n\ndef upstream_tls_violations(service: dict[str, object]) -> tuple[str, ...]:\n    violations: list[str] = []\n    if str(service.get(\"protocol\", \"\")).strip().lower() != \"https\":\n        violations.append(\"upstream_protocol_must_be_https\")\n    if not str(service.get(\"host\", \"\")).strip():\n        violations.append(\"upstream_host_is_required\")\n    if service.get(\"tls_verify\") is not True:\n        violations.append(\"tls_verification_must_be_enabled\")\n    depth = service.get(\"tls_verify_depth\")\n    if not isinstance(depth, int) or isinstance(depth, bool) or not 1 <= depth <= 9:\n        violations.append(\"tls_verify_depth_must_be_between_1_and_9\")\n    ca_certificates = service.get(\"ca_certificates\")\n    if not isinstance(ca_certificates, list) or not any(str(item).strip() for item in ca_certificates):\n        violations.append(\"trusted_ca_reference_is_required\")\n    return tuple(violations)\n\n\ndef upstream_tls_is_safe(service: dict[str, object]) -> bool:\n    return not upstream_tls_violations(service)\n"
+      },
+      {
+        "path": "tests/test_upstream_tls.py",
+        "content": "import unittest\n\nfrom kong_deck_gateway.upstream_tls import upstream_tls_is_safe, upstream_tls_violations\n\n\nclass UpstreamTlsTests(unittest.TestCase):\n    def test_verified_https_upstream_passes(self):\n        service = {\"protocol\": \"https\", \"host\": \"orders.internal\", \"tls_verify\": True, \"tls_verify_depth\": 3, \"ca_certificates\": [\"internal-ca-id\"]}\n        self.assertTrue(upstream_tls_is_safe(service))\n\n    def test_plaintext_and_disabled_verification_are_reported(self):\n        violations = upstream_tls_violations({\"protocol\": \"http\", \"host\": \"orders.internal\", \"tls_verify\": False, \"tls_verify_depth\": 3, \"ca_certificates\": [\"internal-ca-id\"]})\n        self.assertIn(\"upstream_protocol_must_be_https\", violations)\n        self.assertIn(\"tls_verification_must_be_enabled\", violations)\n\n    def test_ca_reference_and_bounded_depth_are_required(self):\n        violations = upstream_tls_violations({\"protocol\": \"https\", \"host\": \"orders.internal\", \"tls_verify\": True, \"tls_verify_depth\": 0, \"ca_certificates\": []})\n        self.assertIn(\"tls_verify_depth_must_be_between_1_and_9\", violations)\n        self.assertIn(\"trusted_ca_reference_is_required\", violations)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Adds a production gateway security contract for authenticated upstream transport without storing certificate material or making live network calls.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm plaintext, disabled verification, invalid depth, and missing CA references fail validation.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
