@@ -641,6 +641,50 @@
     "portfolio_reason": "Turns request-size documentation into a testable route contract that reduces gateway memory and abuse risk before decK sync.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm body methods require positive bounded limits while read-only routes pass.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "gateway-route-preflight-gate",
+    "title": "Add gateway route preflight gate",
+    "files": [
+      {
+        "path": "docs/daily/gateway-route-preflight-gate.md",
+        "kind": "document",
+        "content": "Route promotion should evaluate authentication coverage and request-body limits together rather than as disconnected checks. This aggregate preflight reports route-specific violations before decK sync and keeps public exceptions explicit."
+      },
+      {
+        "path": "kong_deck_gateway/route_preflight.py",
+        "content": "from __future__ import annotations\n\nfrom kong_deck_gateway.request_size import request_size_violations\nfrom kong_deck_gateway.route_authentication import route_authentication_violations\n\n\ndef route_preflight_violations(routes: list[dict[str, object]], *, platform_max_megabytes: int = 32) -> tuple[str, ...]:\n    violations = list(route_authentication_violations(routes))\n    for index, route in enumerate(routes):\n        name = str(route.get(\"name\", \"\")).strip() or f\"route_{index}\"\n        violations.extend(f\"{name}:{violation}\" for violation in request_size_violations(route, platform_max_megabytes=platform_max_megabytes))\n    return tuple(violations)\n\n\ndef routes_are_ready_for_sync(routes: list[dict[str, object]], *, platform_max_megabytes: int = 32) -> bool:\n    return bool(routes) and not route_preflight_violations(routes, platform_max_megabytes=platform_max_megabytes)\n"
+      },
+      {
+        "path": "tests/test_route_preflight.py",
+        "content": "import unittest\n\nfrom kong_deck_gateway.route_preflight import route_preflight_violations, routes_are_ready_for_sync\n\n\nclass RoutePreflightTests(unittest.TestCase):\n    def test_authenticated_bounded_route_is_ready(self):\n        routes = [{\"name\": \"orders\", \"plugins\": [\"jwt\"], \"methods\": [\"POST\"], \"allowed_payload_size_megabytes\": 8}]\n        self.assertTrue(routes_are_ready_for_sync(routes))\n\n    def test_authentication_and_request_size_failures_are_combined(self):\n        violations = route_preflight_violations([{\"name\": \"orders\", \"plugins\": [], \"methods\": [\"POST\"]}])\n        self.assertIn(\"orders:approved_authentication_plugin_is_required\", violations)\n        self.assertIn(\"orders:positive_request_size_limit_is_required\", violations)\n\n    def test_empty_route_set_does_not_claim_readiness(self):\n        self.assertFalse(routes_are_ready_for_sync([]))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Converts route security policies into a single pre-sync decision suitable for promotion automation.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm authentication and payload-size failures are aggregated per route.",
+    "change_kind": "docs-and-code"
+  },
+  {
+    "id": "deck-promotion-safety-gate",
+    "title": "Add decK promotion safety gate",
+    "files": [
+      {
+        "path": "docs/daily/deck-promotion-safety-gate.md",
+        "kind": "document",
+        "content": "A decK promotion should combine diff approval, route preflight, and upstream timeout contracts in one deterministic report. The gate blocks destructive or unknown changes, unsafe routes, and unbounded service timeouts before sync."
+      },
+      {
+        "path": "kong_deck_gateway/promotion_gate.py",
+        "content": "from __future__ import annotations\n\nfrom kong_deck_gateway.deck_diff_safety import deck_diff_warnings\nfrom kong_deck_gateway.route_preflight import route_preflight_violations\nfrom kong_deck_gateway.upstream_timeouts import upstream_timeout_warnings\n\n\ndef promotion_gate_violations(*, actions: list[str], routes: list[dict[str, object]], timeouts: dict[str, object], destructive_approved: bool = False, reviewer: str | None = None, environment: str | None = None) -> tuple[str, ...]:\n    violations = list(deck_diff_warnings(actions, destructive_approved=destructive_approved, reviewer=reviewer, environment=environment))\n    violations.extend(route_preflight_violations(routes))\n    violations.extend(upstream_timeout_warnings(timeouts))\n    return tuple(violations)\n\n\ndef promotion_is_safe(**inputs: object) -> bool:\n    return not promotion_gate_violations(**inputs)\n"
+      },
+      {
+        "path": "tests/test_promotion_gate.py",
+        "content": "import unittest\n\nfrom kong_deck_gateway.promotion_gate import promotion_gate_violations, promotion_is_safe\n\n\nclass PromotionGateTests(unittest.TestCase):\n    def test_reviewed_safe_configuration_passes(self):\n        routes = [{\"name\": \"orders\", \"plugins\": [\"jwt\"], \"methods\": [\"GET\"]}]\n        self.assertTrue(promotion_is_safe(actions=[\"update\"], routes=routes, timeouts={\"connect_ms\": 1000, \"read_ms\": 30000, \"write_ms\": 30000}, reviewer=\"platform\", environment=\"staging\"))\n\n    def test_diff_route_and_timeout_failures_are_combined(self):\n        violations = promotion_gate_violations(actions=[\"delete\"], routes=[{\"name\": \"orders\", \"plugins\": []}], timeouts={}, reviewer=None, environment=None)\n        self.assertIn(\"destructive_change_requires_approval\", violations)\n        self.assertIn(\"orders:approved_authentication_plugin_is_required\", violations)\n        self.assertIn(\"connect_ms_is_out_of_range\", violations)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Builds a credible decK pre-sync gate spanning change review, route security, and upstream reliability.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm diff, route, and timeout violations block promotion together.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
