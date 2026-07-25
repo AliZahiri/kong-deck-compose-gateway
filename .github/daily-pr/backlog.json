@@ -685,6 +685,50 @@
     "portfolio_reason": "Builds a credible decK pre-sync gate spanning change review, route security, and upstream reliability.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm diff, route, and timeout violations block promotion together.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "upstream-target-drain-policy",
+    "title": "Add upstream target drain policy",
+    "files": [
+      {
+        "path": "docs/daily/upstream-target-drain-policy.md",
+        "kind": "document",
+        "content": "Removing a Kong upstream target should require explicit drain evidence rather than assuming a zero weight is sufficient. This policy requires the target weight to be zero, active connections to remain at zero across a configurable number of observations, a minimum drain interval to elapse, and a healthy replacement target to be available before removal."
+      },
+      {
+        "path": "kong_deck_gateway/target_drain.py",
+        "content": "from __future__ import annotations\n\n\ndef target_drain_violations(evidence: dict[str, object], *, minimum_checks: int = 3, minimum_drain_seconds: int = 30) -> tuple[str, ...]:\n    if not isinstance(minimum_checks, int) or isinstance(minimum_checks, bool) or minimum_checks <= 0:\n        raise ValueError(\"minimum checks must be a positive integer\")\n    if not isinstance(minimum_drain_seconds, int) or isinstance(minimum_drain_seconds, bool) or minimum_drain_seconds <= 0:\n        raise ValueError(\"minimum drain duration must be a positive integer\")\n    violations: list[str] = []\n    if not str(evidence.get(\"target\", \"\")).strip():\n        violations.append(\"target_is_required\")\n    weight = evidence.get(\"configured_weight\")\n    if not isinstance(weight, int) or isinstance(weight, bool) or weight != 0:\n        violations.append(\"target_weight_must_be_zero\")\n    connections = evidence.get(\"active_connections\")\n    if not isinstance(connections, int) or isinstance(connections, bool) or connections != 0:\n        violations.append(\"active_connections_must_be_zero\")\n    checks = evidence.get(\"consecutive_zero_connection_checks\")\n    if not isinstance(checks, int) or isinstance(checks, bool) or checks < minimum_checks:\n        violations.append(\"zero_connection_observations_below_minimum\")\n    duration = evidence.get(\"drain_seconds\")\n    if not isinstance(duration, int) or isinstance(duration, bool) or duration < minimum_drain_seconds:\n        violations.append(\"drain_duration_below_minimum\")\n    if evidence.get(\"replacement_healthy\") is not True:\n        violations.append(\"healthy_replacement_must_be_confirmed\")\n    return tuple(violations)\n\n\ndef target_is_safe_to_remove(evidence: dict[str, object], *, minimum_checks: int = 3, minimum_drain_seconds: int = 30) -> bool:\n    return not target_drain_violations(evidence, minimum_checks=minimum_checks, minimum_drain_seconds=minimum_drain_seconds)\n"
+      },
+      {
+        "path": "tests/test_target_drain.py",
+        "content": "import unittest\n\nfrom kong_deck_gateway.target_drain import target_drain_violations, target_is_safe_to_remove\n\n\ndef drained_target():\n    return {\"target\": \"10.0.0.8:8080\", \"configured_weight\": 0, \"active_connections\": 0, \"consecutive_zero_connection_checks\": 4, \"drain_seconds\": 45, \"replacement_healthy\": True}\n\n\nclass TargetDrainPolicyTests(unittest.TestCase):\n    def test_zero_weight_observed_drain_with_replacement_passes(self):\n        self.assertTrue(target_is_safe_to_remove(drained_target()))\n\n    def test_weight_connections_duration_and_replacement_failures_are_combined(self):\n        evidence = drained_target()\n        evidence.update({\"configured_weight\": 10, \"active_connections\": 2, \"consecutive_zero_connection_checks\": 1, \"drain_seconds\": 5, \"replacement_healthy\": False})\n\n        violations = target_drain_violations(evidence)\n\n        self.assertIn(\"target_weight_must_be_zero\", violations)\n        self.assertIn(\"active_connections_must_be_zero\", violations)\n        self.assertIn(\"zero_connection_observations_below_minimum\", violations)\n        self.assertIn(\"drain_duration_below_minimum\", violations)\n        self.assertIn(\"healthy_replacement_must_be_confirmed\", violations)\n\n    def test_boolean_counters_and_invalid_policy_values_are_rejected(self):\n        evidence = drained_target()\n        evidence[\"active_connections\"] = False\n        self.assertIn(\"active_connections_must_be_zero\", target_drain_violations(evidence))\n        with self.assertRaises(ValueError):\n            target_drain_violations(evidence, minimum_checks=0)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Adds evidence-based upstream removal safety so target deletion waits for traffic drain and healthy replacement capacity.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm fully drained targets pass while nonzero weight/connections, insufficient observations or duration, invalid counters, and missing replacement health fail.",
+    "change_kind": "docs-and-code"
+  },
+  {
+    "id": "protected-plugin-change-approval",
+    "title": "Add protected plugin change approval contract",
+    "files": [
+      {
+        "path": "docs/daily/protected-plugin-change-approval.md",
+        "kind": "document",
+        "content": "Updates or removals of authentication, rate-limit, request-size, and IP-restriction plugins carry more risk than ordinary gateway changes. This contract validates plugin action and scope metadata, rejects duplicate change records, and requires both a reviewer and change ticket before a protected plugin can be updated or removed. It complements decK diff safety without performing a sync."
+      },
+      {
+        "path": "kong_deck_gateway/plugin_change_approval.py",
+        "content": "from __future__ import annotations\n\nfrom kong_deck_gateway.plugin_drift import PROTECTED_PLUGINS\n\n\n_ACTIONS = {\"add\", \"update\", \"remove\"}\n_SCOPES = {\"global\", \"service\", \"route\", \"consumer\"}\n\n\ndef plugin_change_violations(changes: list[dict[str, object]], *, approved_by: str | None = None, change_ticket: str | None = None) -> tuple[str, ...]:\n    if not changes:\n        return (\"at_least_one_plugin_change_is_required\",)\n    violations: list[str] = []\n    seen: set[tuple[str, str]] = set()\n    protected_change = False\n    for index, change in enumerate(changes):\n        plugin = str(change.get(\"plugin\", \"\")).strip()\n        scope = str(change.get(\"scope\", \"\")).strip().lower()\n        action = str(change.get(\"action\", \"\")).strip().lower()\n        if not plugin:\n            violations.append(f\"change_{index}:plugin_name_is_required\")\n        if scope not in _SCOPES:\n            violations.append(f\"change_{index}:plugin_scope_is_invalid\")\n        if action not in _ACTIONS:\n            violations.append(f\"change_{index}:plugin_action_is_invalid\")\n        key = (plugin, scope)\n        if key in seen:\n            violations.append(f\"change_{index}:duplicate_plugin_scope_change\")\n        seen.add(key)\n        if plugin in PROTECTED_PLUGINS and action in {\"update\", \"remove\"}:\n            protected_change = True\n    if protected_change and not str(approved_by or \"\").strip():\n        violations.append(\"protected_plugin_change_requires_reviewer\")\n    if protected_change and not str(change_ticket or \"\").strip():\n        violations.append(\"protected_plugin_change_requires_ticket\")\n    return tuple(violations)\n\n\ndef plugin_changes_are_approved(changes: list[dict[str, object]], *, approved_by: str | None = None, change_ticket: str | None = None) -> bool:\n    return not plugin_change_violations(changes, approved_by=approved_by, change_ticket=change_ticket)\n"
+      },
+      {
+        "path": "tests/test_plugin_change_approval.py",
+        "content": "import unittest\n\nfrom kong_deck_gateway.plugin_change_approval import plugin_change_violations, plugin_changes_are_approved\n\n\nclass ProtectedPluginChangeApprovalTests(unittest.TestCase):\n    def test_reviewed_ticketed_protected_update_passes(self):\n        changes = [{\"plugin\": \"jwt\", \"scope\": \"route\", \"action\": \"update\"}]\n        self.assertTrue(plugin_changes_are_approved(changes, approved_by=\"platform-reviewer\", change_ticket=\"CHG-2042\"))\n\n    def test_unreviewed_protected_removal_requires_reviewer_and_ticket(self):\n        changes = [{\"plugin\": \"rate-limiting\", \"scope\": \"service\", \"action\": \"remove\"}]\n        violations = plugin_change_violations(changes)\n        self.assertIn(\"protected_plugin_change_requires_reviewer\", violations)\n        self.assertIn(\"protected_plugin_change_requires_ticket\", violations)\n\n    def test_invalid_and_duplicate_change_records_fail(self):\n        changes = [\n            {\"plugin\": \"cors\", \"scope\": \"route\", \"action\": \"update\"},\n            {\"plugin\": \"cors\", \"scope\": \"route\", \"action\": \"replace\"},\n        ]\n        violations = plugin_change_violations(changes)\n        self.assertIn(\"change_1:plugin_action_is_invalid\", violations)\n        self.assertIn(\"change_1:duplicate_plugin_scope_change\", violations)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      }
+    ],
+    "portfolio_reason": "Introduces explicit review evidence for high-impact gateway plugin mutations while preserving deterministic pre-sync validation.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm approved protected changes pass while missing reviewer/ticket metadata, invalid actions/scopes, empty names, and duplicate records fail.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
