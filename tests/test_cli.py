@@ -10,6 +10,7 @@ from unittest import mock
 from kong_deck_gateway.cli import (
     deck_template_values,
     deck_script,
+    main,
     read_active_color,
     promotion_plan,
     render_deck_state,
@@ -168,6 +169,40 @@ class KongDeckGatewayTests(unittest.TestCase):
             output = stdout.getvalue()
             plan = json.loads(output)
             self.assertEqual(plan["target_color"], "green")
+
+    def test_check_plugin_change_command_returns_json_policy_result(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            request_path = Path(tmpdir) / "plugin-change.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "changes": [{"plugin": "jwt", "scope": "route", "action": "update"}],
+                        "approved_by": "platform-reviewer",
+                        "change_ticket": "CHG-2042",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with redirect_stdout(StringIO()) as stdout:
+                result = main(["check-plugin-change", str(request_path)])
+
+        self.assertEqual(0, result)
+        self.assertTrue(json.loads(stdout.getvalue())["approved"])
+
+    def test_check_plugin_change_command_blocks_missing_approval(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            request_path = Path(tmpdir) / "plugin-change.json"
+            request_path.write_text(
+                json.dumps({"changes": [{"plugin": "jwt", "scope": "route", "action": "remove"}]}),
+                encoding="utf-8",
+            )
+
+            with redirect_stdout(StringIO()) as stdout:
+                result = main(["check-plugin-change", str(request_path)])
+
+        self.assertEqual(1, result)
+        self.assertFalse(json.loads(stdout.getvalue())["approved"])
 
 
 if __name__ == "__main__":
