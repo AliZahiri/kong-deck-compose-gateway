@@ -8,6 +8,8 @@ import sys
 import time
 from pathlib import Path
 
+from kong_deck_gateway.plugin_change_approval import plugin_change_report
+
 
 VALID_COLORS = {"blue", "green"}
 VALID_RATE_LIMIT_POLICIES = {"local", "cluster", "redis"}
@@ -195,6 +197,27 @@ def switch(args: argparse.Namespace) -> int:
     return 0
 
 
+def load_json_object(path: Path) -> dict[str, object]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("plugin change input must be a JSON object")
+    return payload
+
+
+def check_plugin_change(args: argparse.Namespace) -> int:
+    payload = load_json_object(args.input)
+    changes = payload.get("changes")
+    if not isinstance(changes, list):
+        raise ValueError("plugin changes must be a JSON array")
+    report = plugin_change_report(
+        changes,
+        approved_by=payload.get("approved_by"),
+        change_ticket=payload.get("change_ticket"),
+    )
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0 if report["approved"] else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Kong decK blue/green gateway helper")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -216,6 +239,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     switch_parser.add_argument("--plan-json", action="store_true", help="Print dry-run promotion plan as JSON.")
     switch_parser.set_defaults(func=switch)
+
+    approval_parser = subparsers.add_parser("check-plugin-change", help="Validate protected plugin change approval")
+    approval_parser.add_argument("input", type=Path, help="Path to a JSON plugin change request.")
+    approval_parser.set_defaults(func=check_plugin_change)
 
     return parser
 

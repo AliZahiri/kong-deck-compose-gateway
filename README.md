@@ -60,6 +60,7 @@ The upstream switching logic is implemented as a Python CLI and the Bash script 
 ```bash
 python3 -m kong_deck_gateway switch green
 python3 -m kong_deck_gateway switch blue
+python3 -m kong_deck_gateway check-plugin-change plugin-change.json
 ```
 
 The CLI handles:
@@ -70,6 +71,7 @@ The CLI handles:
 - decK state rendering
 - decK sync execution
 - optional old color shutdown
+- protected plugin change approval validation
 
 ## Repository Structure
 
