@@ -1033,6 +1033,18 @@
     "portfolio_reason": "Complements admin API exposure controls with traceability and credential-redaction requirements for configuration-changing operations.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm a reviewable audit policy passes while invalid retention, absent actor or request IDs, missing redaction, and unsupported sinks fail.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "gateway-sensitive-header-redaction-contract",
+    "title": "Add gateway sensitive header redaction contract",
+    "files": [
+      {"path": "docs/daily/gateway-sensitive-header-redaction-contract.md", "kind": "document", "content": "Gateway request logging requires an explicit sensitive-header redaction policy. This offline contract validates that authentication and client credential headers are listed, header matching is case-insensitive, and logs retain a request ID for safe traceability without storing secrets."},
+      {"path": "kong_deck_gateway/header_redaction.py", "content": "from __future__ import annotations\n\n\n_REQUIRED_HEADERS = frozenset({\"authorization\", \"cookie\", \"x-api-key\"})\n\n\ndef header_redaction_violations(policy: dict[str, object]) -> tuple[str, ...]:\n    violations: list[str] = []\n    headers = policy.get(\"headers\")\n    if not isinstance(headers, (list, tuple, set)) or not all(isinstance(header, str) for header in headers):\n        violations.append(\"headers_must_be_string_collection\")\n    else:\n        missing = _REQUIRED_HEADERS.difference(header.strip().lower() for header in headers)\n        if missing:\n            violations.append(\"required_sensitive_headers_are_missing\")\n    if policy.get(\"case_insensitive\") is not True:\n        violations.append(\"case_insensitive_matching_is_required\")\n    if policy.get(\"retain_request_id\") is not True:\n        violations.append(\"request_id_retention_is_required\")\n    return tuple(violations)\n\n\ndef header_redaction_is_safe(policy: dict[str, object]) -> bool:\n    return not header_redaction_violations(policy)\n"},
+      {"path": "tests/test_header_redaction.py", "content": "import unittest\n\nfrom kong_deck_gateway.header_redaction import header_redaction_is_safe, header_redaction_violations\n\n\nclass GatewaySensitiveHeaderRedactionContractTests(unittest.TestCase):\n    def test_case_insensitive_complete_policy_passes(self):\n        self.assertTrue(header_redaction_is_safe({\"headers\": [\"Authorization\", \"COOKIE\", \"X-API-Key\"], \"case_insensitive\": True, \"retain_request_id\": True}))\n\n    def test_incomplete_policy_reports_controls(self):\n        violations = header_redaction_violations({\"headers\": [\"authorization\"], \"case_insensitive\": False, \"retain_request_id\": False})\n        self.assertEqual(violations, (\"required_sensitive_headers_are_missing\", \"case_insensitive_matching_is_required\", \"request_id_retention_is_required\"))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"}
+    ],
+    "portfolio_reason": "Adds a practical privacy and security control to gateway observability without logging credentials or requiring a live Kong instance.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm case-insensitive policies redact Authorization, Cookie, and X-API-Key while retaining request IDs.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
