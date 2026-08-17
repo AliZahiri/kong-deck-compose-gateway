@@ -1045,6 +1045,18 @@
     "portfolio_reason": "Adds a practical privacy and security control to gateway observability without logging credentials or requiring a live Kong instance.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm case-insensitive policies redact Authorization, Cookie, and X-API-Key while retaining request IDs.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "gateway-route-change-window-gate",
+    "title": "Add gateway route change window gate",
+    "files": [
+      {"path": "docs/daily/gateway-route-change-window-gate.md", "kind": "document", "content": "Gateway route changes that alter public traffic should be tied to an explicit approved window. This offline policy validates timezone-aware start and end times, a bounded window duration, and an approval reference. It does not perform a live Kong sync or bypass existing promotion checks."},
+      {"path": "kong_deck_gateway/route_change_window.py", "content": "from __future__ import annotations\n\nfrom datetime import datetime\n\n\ndef route_change_window_violations(window: dict[str, object], *, max_minutes: int = 120) -> tuple[str, ...]:\n    violations: list[str] = []\n    values: list[datetime] = []\n    for field in (\"starts_at\", \"ends_at\"):\n        value = window.get(field)\n        try:\n            parsed = datetime.fromisoformat(value.replace(\"Z\", \"+00:00\")) if isinstance(value, str) else None\n        except ValueError:\n            parsed = None\n        if parsed is None or parsed.tzinfo is None or parsed.utcoffset() is None:\n            violations.append(f\"{field}_must_be_timezone_aware\")\n        else:\n            values.append(parsed)\n    if len(values) == 2 and (values[1] <= values[0] or (values[1] - values[0]).total_seconds() > max_minutes * 60):\n        violations.append(\"change_window_must_be_positive_and_bounded\")\n    if not isinstance(window.get(\"approval_reference\"), str) or not window[\"approval_reference\"].strip():\n        violations.append(\"approval_reference_is_required\")\n    return tuple(violations)\n\n\ndef route_change_window_is_approved(window: dict[str, object], *, max_minutes: int = 120) -> bool:\n    return not route_change_window_violations(window, max_minutes=max_minutes)\n"},
+      {"path": "tests/test_route_change_window.py", "content": "import unittest\n\nfrom kong_deck_gateway.route_change_window import route_change_window_is_approved, route_change_window_violations\n\n\nclass GatewayRouteChangeWindowGateTests(unittest.TestCase):\n    def test_bounded_approved_window_passes(self):\n        self.assertTrue(route_change_window_is_approved({\"starts_at\": \"2026-08-17T02:00:00Z\", \"ends_at\": \"2026-08-17T02:30:00Z\", \"approval_reference\": \"CHG-42\"}))\n\n    def test_naive_unbounded_and_unapproved_window_fails(self):\n        violations = route_change_window_violations({\"starts_at\": \"2026-08-17T02:00:00\", \"ends_at\": \"2026-08-17T06:30:00Z\", \"approval_reference\": \"\"})\n        self.assertEqual(violations, (\"starts_at_must_be_timezone_aware\", \"approval_reference_is_required\"))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"}
+    ],
+    "portfolio_reason": "Adds a reviewable operational guardrail for externally visible route changes while preserving decK diff and promotion safety controls.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm approved, bounded timezone-aware windows pass while invalid timestamps and missing approvals fail.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
