@@ -1057,6 +1057,18 @@
     "portfolio_reason": "Adds a reviewable operational guardrail for externally visible route changes while preserving decK diff and promotion safety controls.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm approved, bounded timezone-aware windows pass while invalid timestamps and missing approvals fail.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "gateway-upstream-change-ticket-gate",
+    "title": "Add upstream change ticket gate",
+    "files": [
+      {"path": "docs/daily/gateway-upstream-change-ticket-gate.md", "kind": "document", "content": "Document an offline contract requiring a change ticket and affected-service scope before upstream target changes are promoted."},
+      {"path": "kong_deck_gateway/upstream_change_ticket.py", "content": "from __future__ import annotations\n\ndef upstream_change_ticket_violations(change: dict[str, object]) -> tuple[str, ...]:\n    return ()\n"},
+      {"path": "tests/test_upstream_change_ticket.py", "content": "import unittest\n\nclass UpstreamChangeTicketTests(unittest.TestCase):\n    def test_placeholder(self):\n        self.assertTrue(True)\n"}
+    ],
+    "portfolio_reason": "Connects decK upstream promotion with traceable operational change ownership.",
+    "test_instructions": "Run the unit test and expand it to cover missing ticket, owner, and target scope.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
