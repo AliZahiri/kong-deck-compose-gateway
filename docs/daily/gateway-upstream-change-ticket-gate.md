@@ -2,7 +2,7 @@
 
 <!-- daily-pr-task: gateway-upstream-change-ticket-gate -->
 
-Document an offline contract requiring a change ticket and affected-service scope before upstream target changes are promoted.
+This offline gate makes upstream changes reviewable before decK promotion. It requires a change ticket, accountable owner, and a non-empty unique list of affected upstreams. Removing an upstream also requires a rollback reference; this complements decK diff, health, and traffic-drain checks.
 
 ## Portfolio Value
 
@@ -10,4 +10,4 @@ Connects decK upstream promotion with traceable operational change ownership.
 
 ## Validation
 
-Run the unit test and expand it to cover missing ticket, owner, and target scope.
+Run python3 -m unittest discover -s tests. Tests cover a ticketed update plus missing ownership, duplicate or malformed upstream scope, and removals without a rollback reference.
