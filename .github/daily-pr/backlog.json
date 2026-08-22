@@ -1105,6 +1105,18 @@
     "portfolio_reason": "Binds public route changes to explicit ownership, risk review, method scope, and rollback preparation before gateway promotion.",
     "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm a route change cannot pass without a valid ticket, supported methods, review, and rollback plan.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "gateway-route-shadowing-gate",
+    "title": "Add gateway route shadowing gate",
+    "files": [
+      {"path": "docs/daily/gateway-route-shadowing-gate.md", "kind": "document", "content": "Detect duplicate route identity declarations before decK promotion so a broad or repeated route cannot silently shadow its intended owner."},
+      {"path": "kong_deck_gateway/route_shadowing.py", "content": "from __future__ import annotations\n\n\ndef route_shadowing_violations(routes: list[dict[str, object]]) -> tuple[str, ...]:\n    seen: set[tuple[str, str]] = set()\n    violations: list[str] = []\n    for index, route in enumerate(routes):\n        name, path = route.get(\"name\"), route.get(\"path\")\n        if not isinstance(name, str) or not name.strip() or not isinstance(path, str) or not path.startswith(\"/\"):\n            violations.append(f\"route_{index}:name_and_absolute_path_are_required\")\n            continue\n        identity = (name, path)\n        if identity in seen:\n            violations.append(f\"route_{index}:duplicate_route_identity\")\n        seen.add(identity)\n    return tuple(violations)\n\n\ndef routes_are_unambiguous(routes: list[dict[str, object]]) -> bool:\n    return not route_shadowing_violations(routes)\n"},
+      {"path": "tests/test_route_shadowing.py", "content": "import unittest\n\nfrom kong_deck_gateway.route_shadowing import routes_are_unambiguous\n\n\nclass RouteShadowingTests(unittest.TestCase):\n    def test_unique_named_paths_pass(self):\n        self.assertTrue(routes_are_unambiguous([{\"name\": \"orders\", \"path\": \"/orders\"}]))\n\n    def test_duplicate_route_identity_fails(self):\n        self.assertFalse(routes_are_unambiguous([{\"name\": \"orders\", \"path\": \"/orders\"}, {\"name\": \"orders\", \"path\": \"/orders\"}]))\n"}
+    ],
+    "portfolio_reason": "Adds a deterministic pre-promotion safety check for route ownership and accidental duplicate declarations.",
+    "test_instructions": "Run `python3 -m unittest discover -s tests` and confirm malformed or duplicate route identities fail.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
