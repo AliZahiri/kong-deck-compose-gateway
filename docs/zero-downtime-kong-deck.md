@@ -24,6 +24,19 @@ Kong stays running while the upstream target changes. The proxy process is not r
 - The old and new backend versions must be compatible during the switch.
 - Database migrations must be backward compatible.
 
+## Container Readiness
+
+The switching CLI checks the Docker lifecycle state before health status.
+Exited, dead, removing, and unhealthy candidates fail immediately, before the
+decK state is rendered or applied and before the active-color marker changes.
+Created, paused, restarting, and health-check-starting candidates are polled
+within the configured attempt budget; a cached healthy result cannot override a
+non-running lifecycle state.
+
+For compatibility, a running container without a Docker health check still
+passes the gate. This proves process liveness only. Configure an application
+readiness check for production traffic promotion.
+
 ## Rollback
 
 Rollback is another decK sync pointing the route back to the previous color:
