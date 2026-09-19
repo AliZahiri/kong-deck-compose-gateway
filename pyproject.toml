@@ -1,6 +1,6 @@
 [project]
 name = "kong-deck-compose-gateway"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python CLI for Kong decK blue/green upstream switching"
 requires-python = ">=3.10"
 
