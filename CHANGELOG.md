@@ -6,7 +6,7 @@ The project follows Semantic Versioning for public release snapshots. Gateway
 policy helpers and supplied evidence remain advisory until an operator adopts
 them in a reviewed promotion workflow.
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-09-25
 
 ### Added
 
