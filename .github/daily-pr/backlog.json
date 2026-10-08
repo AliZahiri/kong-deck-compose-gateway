@@ -1400,6 +1400,15 @@
     "portfolio_reason": "Makes per-consumer gateway fairness reviewable by rejecting ambiguous identity scopes and invalid rate-limit declarations before promotion.",
     "test_instructions": "Run python3 -m unittest discover -s tests and confirm each consumer policy needs a unique identifier, approved identity key, positive limit, and explicit supported window.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "gateway-rate-limit-response-contract-gate",
+    "title": "Add gateway rate-limit response contract gate",
+    "files": [
+      {"path": "docs/daily/gateway-rate-limit-response-contract-gate.md", "kind": "document", "content": "Clients need deterministic, non-sensitive feedback when a gateway applies a rate limit. This offline gate validates a declared status code and a small allowlist of response headers without contacting a gateway."},
+      {"path": "scripts/gateway_rate_limit_response_contract.py", "content": "from __future__ import annotations\n\n_ALLOWED_HEADERS = frozenset({\"RateLimit-Limit\", \"RateLimit-Remaining\", \"RateLimit-Reset\", \"Retry-After\"})\n\ndef rate_limit_response_violations(contract: object) -> tuple[str, ...]:\n    if not isinstance(contract, dict): return (\"response_contract_must_be_an_object\",)\n    violations: list[str] = []\n    if contract.get(\"status_code\") != 429: violations.append(\"status_code_must_be_429\")\n    headers = contract.get(\"headers\")\n    if not isinstance(headers, list) or not headers: violations.append(\"headers_must_be_a_non_empty_list\")\n    elif any(not isinstance(value, str) or value not in _ALLOWED_HEADERS for value in headers) or len(set(headers)) != len(headers): violations.append(\"headers_must_be_unique_allowlisted_values\")\n    return tuple(violations)\n\ndef rate_limit_response_is_safe(contract: object) -> bool: return not rate_limit_response_violations(contract)\n"},
+      {"path": "tests/test_gateway_rate_limit_response_contract.py", "content": "import unittest\nfrom scripts.gateway_rate_limit_response_contract import rate_limit_response_is_safe, rate_limit_response_violations\n\nclass GatewayRateLimitResponseContractTests(unittest.TestCase):\n    def test_explicit_allowlisted_response_passes(self): self.assertTrue(rate_limit_response_is_safe({\"status_code\": 429, \"headers\": [\"Retry-After\", \"RateLimit-Remaining\"]}))\n    def test_wrong_status_and_sensitive_header_fail(self):\n        violations = rate_limit_response_violations({\"status_code\": 500, \"headers\": [\"Authorization\"]})\n        self.assertIn(\"status_code_must_be_429\", violations); self.assertIn(\"headers_must_be_unique_allowlisted_values\", violations)\n\nif __name__ == \"__main__\": unittest.main()\n"}
+    ], "portfolio_reason": "Keeps rate-limit behavior predictable for clients while preventing a policy from accidentally disclosing sensitive response metadata.", "test_instructions": "Run python3 -m unittest discover -s tests and confirm a 429 response with unique allowlisted headers passes.", "change_kind": "docs-and-code"
   }
 ]
 }
