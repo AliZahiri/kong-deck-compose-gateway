@@ -1431,6 +1431,18 @@
     "portfolio_reason": "Prevents a gateway promotion from silently accepting plaintext, unverifiable TLS, or unbounded upstream timeout settings that can harm availability and traceability.",
     "test_instructions": "Run python3 -m unittest discover -s tests and confirm HTTPS plus verified TLS and bounded timeouts pass while insecure transport, duplicate names, and malformed timeouts fail.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "gateway-service-path-contract-gate",
+    "title": "Add gateway service path contract gate",
+    "files": [
+      {"path": "docs/daily/gateway-service-path-contract-gate.md", "kind": "document", "content": "Service path rewriting can unintentionally escape an intended upstream prefix or create ambiguous route behavior. This offline gate validates canonical absolute service paths, rejects dot-segments and query fragments, and requires unique service names before a decK configuration is promoted. It does not contact Kong or an upstream."},
+      {"path": "kong_deck_gateway/service_path.py", "content": "from __future__ import annotations\n\n\ndef service_path_violations(services: object) -> tuple[str, ...]:\n    if not isinstance(services, list) or not services: return ('services_must_be_a_non_empty_list',)\n    violations: list[str] = []\n    names: set[str] = set()\n    for position, service in enumerate(services):\n        prefix = f'service_{position}'\n        if not isinstance(service, dict): violations.append(f'{prefix}:service_must_be_an_object'); continue\n        name = service.get('name')\n        if not isinstance(name, str) or not name.strip(): violations.append(f'{prefix}:name_is_required')\n        elif name in names: violations.append(f'{prefix}:name_must_be_unique')\n        else: names.add(name)\n        path = service.get('path')\n        if not isinstance(path, str) or not path.startswith('/') or '//' in path or '?' in path or '#' in path or any(part in {'.', '..'} for part in path.split('/')): violations.append(f'{prefix}:path_must_be_canonical_and_absolute')\n    return tuple(violations)\n"},
+      {"path": "tests/test_service_path.py", "content": "import unittest\nfrom kong_deck_gateway.service_path import service_path_violations\nclass ServicePathContractTests(unittest.TestCase):\n    def test_canonical_path_passes(self): self.assertEqual((), service_path_violations([{'name':'catalog','path':'/v1/catalog'}]))\n    def test_ambiguous_path_and_duplicate_name_fail(self):\n        violations = service_path_violations([{'name':'catalog','path':'/v1/../admin'}, {'name':'catalog','path':'/v1'}])\n        self.assertIn('service_0:path_must_be_canonical_and_absolute', violations); self.assertIn('service_1:name_must_be_unique', violations)\n"}
+    ],
+    "portfolio_reason": "Reduces route-rewrite ambiguity by checking that service paths are canonical, bounded to their intended prefix, and uniquely attributable before gateway promotion.",
+    "test_instructions": "Run python3 -m unittest discover -s tests and confirm canonical absolute paths pass while duplicate names, dot-segments, duplicated slashes, or query fragments fail.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
