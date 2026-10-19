@@ -1443,6 +1443,18 @@
     "portfolio_reason": "Reduces route-rewrite ambiguity by checking that service paths are canonical, bounded to their intended prefix, and uniquely attributable before gateway promotion.",
     "test_instructions": "Run python3 -m unittest discover -s tests and confirm canonical absolute paths pass while duplicate names, dot-segments, duplicated slashes, or query fragments fail.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "gateway-upstream-port-policy-gate",
+    "title": "Add gateway upstream port policy gate",
+    "files": [
+      {"path": "docs/daily/gateway-upstream-port-policy-gate.md", "kind": "document", "content": "TLS verification alone does not make an upstream endpoint intentional. This offline gate validates declared upstream names, allowed TLS service ports, and a unique endpoint assignment before promotion. The default policy permits standard HTTPS and an explicit alternate TLS port; broader ports require a reviewed policy override. It does not resolve DNS or contact upstreams."},
+      {"path": "kong_deck_gateway/upstream_port_policy.py", "content": "from __future__ import annotations\n\n\ndef upstream_port_policy_violations(upstreams: object, *, allowed_ports: frozenset[int] = frozenset({443, 8443})) -> tuple[str, ...]:\n    if not isinstance(allowed_ports, frozenset) or not allowed_ports or any(not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535 for port in allowed_ports): raise ValueError('allowed_ports must be a non-empty frozenset of valid ports')\n    if not isinstance(upstreams, list) or not upstreams: return ('upstreams_must_be_a_non_empty_list',)\n    violations: list[str] = []; seen: set[tuple[str, int]] = set()\n    for position, upstream in enumerate(upstreams):\n        prefix = f'upstream_{position}'\n        if not isinstance(upstream, dict): violations.append(f'{prefix}:upstream_must_be_an_object'); continue\n        name, port = upstream.get('name'), upstream.get('port')\n        if not isinstance(name, str) or not name.strip(): violations.append(f'{prefix}:name_is_required')\n        if not isinstance(port, int) or isinstance(port, bool) or port not in allowed_ports: violations.append(f'{prefix}:port_is_not_allowed')\n        elif isinstance(name, str) and name.strip():\n            endpoint = (name, port)\n            if endpoint in seen: violations.append(f'{prefix}:endpoint_must_be_unique')\n            seen.add(endpoint)\n    return tuple(violations)\n"},
+      {"path": "tests/test_upstream_port_policy.py", "content": "import unittest\nfrom kong_deck_gateway.upstream_port_policy import upstream_port_policy_violations\nclass UpstreamPortPolicyTests(unittest.TestCase):\n    def test_standard_tls_endpoint_passes(self): self.assertEqual((), upstream_port_policy_violations([{'name':'catalog','port':443}]))\n    def test_non_tls_port_and_duplicate_endpoint_fail(self):\n        violations=upstream_port_policy_violations([{'name':'catalog','port':80},{'name':'catalog','port':443},{'name':'catalog','port':443}])\n        self.assertIn('upstream_0:port_is_not_allowed', violations); self.assertIn('upstream_2:endpoint_must_be_unique', violations)\n    def test_invalid_policy_fails(self):\n        with self.assertRaises(ValueError): upstream_port_policy_violations([], allowed_ports=frozenset())\n"}
+    ],
+    "portfolio_reason": "Makes upstream service-port exposure explicit and reviewable, complementing TLS verification with a least-privilege network endpoint policy.",
+    "test_instructions": "Run python3 -m unittest discover -s tests and confirm allowed unique TLS endpoints pass while plaintext ports, duplicates, and malformed policies fail.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
