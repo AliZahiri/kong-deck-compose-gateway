@@ -1455,6 +1455,18 @@
     "portfolio_reason": "Makes upstream service-port exposure explicit and reviewable, complementing TLS verification with a least-privilege network endpoint policy.",
     "test_instructions": "Run python3 -m unittest discover -s tests and confirm allowed unique TLS endpoints pass while plaintext ports, duplicates, and malformed policies fail.",
     "change_kind": "docs-and-code"
+  },
+  {
+    "id": "gateway-upstream-host-header-gate",
+    "title": "Add gateway upstream host-header contract gate",
+    "files": [
+      {"path": "docs/daily/gateway-upstream-host-header-gate.md", "kind": "document", "content": "A gateway promotion can reach the intended upstream yet deliver an unsafe or ambiguous Host header. This offline gate validates explicit per-service host-header behavior: preserve-host must be a boolean, a rewritten host must be a canonical DNS name, and service names must be unique. It does not send traffic or modify Kong."},
+      {"path": "kong_deck_gateway/upstream_host_header.py", "content": "from __future__ import annotations\n\nimport re\n\n_HOST = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+\\Z')\n\n\ndef upstream_host_header_violations(services: object) -> tuple[str, ...]:\n    if not isinstance(services, list) or not services: return ('services_must_be_a_non_empty_list',)\n    violations: list[str] = []; names: set[str] = set()\n    for position, service in enumerate(services):\n        prefix=f'service_{position}'\n        if not isinstance(service, dict): violations.append(f'{prefix}:service_must_be_an_object'); continue\n        name=service.get('name')\n        if not isinstance(name, str) or not name.strip(): violations.append(f'{prefix}:name_is_required')\n        elif name in names: violations.append(f'{prefix}:name_must_be_unique')\n        else: names.add(name)\n        preserve=service.get('preserve_host')\n        if not isinstance(preserve, bool): violations.append(f'{prefix}:preserve_host_must_be_explicit')\n        elif not preserve and (not isinstance(service.get('upstream_host'), str) or not _HOST.fullmatch(service['upstream_host'].lower())): violations.append(f'{prefix}:rewritten_upstream_host_must_be_dns_name')\n    return tuple(violations)\n"},
+      {"path": "tests/test_upstream_host_header.py", "content": "import unittest\nfrom kong_deck_gateway.upstream_host_header import upstream_host_header_violations\nclass UpstreamHostHeaderTests(unittest.TestCase):\n    def test_explicit_rewritten_dns_host_passes(self): self.assertEqual((), upstream_host_header_violations([{'name':'catalog','preserve_host':False,'upstream_host':'catalog.internal'}]))\n    def test_implicit_and_invalid_host_fail(self):\n        violations=upstream_host_header_violations([{'name':'catalog','preserve_host':'yes','upstream_host':'bad host'},{'name':'catalog','preserve_host':False,'upstream_host':'localhost'}])\n        self.assertIn('service_0:preserve_host_must_be_explicit', violations); self.assertIn('service_1:name_must_be_unique', violations); self.assertIn('service_1:rewritten_upstream_host_must_be_dns_name', violations)\n"}
+    ],
+    "portfolio_reason": "Makes upstream Host-header handling explicit, reducing routing ambiguity and virtual-host exposure during gateway promotion.",
+    "test_instructions": "Run python3 -m unittest discover -s tests and confirm explicit preserve/rewrite behavior with canonical DNS hosts passes while implicit, duplicate, or malformed hosts fail.",
+    "change_kind": "docs-and-code"
   }
 ]
 }
