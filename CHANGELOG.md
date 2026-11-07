@@ -6,6 +6,21 @@ The project follows Semantic Versioning for public release snapshots. Gateway
 policy helpers and supplied evidence remain advisory until an operator adopts
 them in a reviewed promotion workflow.
 
+## [Unreleased]
+
+### Added
+
+- Offline contracts for consumer rate-limit identity, rate-limit response
+  behavior, upstream transport and port policy, upstream host headers, and
+  Kong service paths.
+- Focused tests and examples for the new gateway policy contracts.
+
+### Changed
+
+- GitHub Actions dependencies are pinned to immutable commit SHAs, validation
+  permissions are restricted, and the scheduled portfolio workflow uses the
+  configured Tehran execution time.
+
 ## [0.2.0] - 2026-09-25
 
 ### Added
